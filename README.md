@@ -2,7 +2,7 @@
 
 This program is made to help with PDF or images imposition tasks for print production in way using smple command feauture by typing in "Page Range" field. 
 
-You can test it here:
+You can test and use it here:
 https://mazu-tirazu-spaustuve.eu/impositionfix/
 
 ## Features
