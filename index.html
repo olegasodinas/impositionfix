@@ -1,0 +1,590 @@
+<!doctype html>
+<!--
+    ImpositionFix - PDF Imposition Tool
+    Copyright (C) 2026 Olegas Spausdinimas
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>ImPositionFix</title>
+	<link rel="stylesheet" href="css/styles.css">
+	<link href="css/material-icons.css" rel="stylesheet">
+	<link href="css/material-symbols.css" rel="stylesheet">
+	<style>
+		@media print {
+			body > *:not(.main-layout):not(svg) {
+				display: none !important;
+			}
+			.main-layout > *:not(.workspace) {
+				display: none !important;
+			}
+			.workspace {
+				overflow: visible !important;
+				height: auto !important;
+			}
+			.page {
+				box-shadow: none !important;
+				margin: 0 !important;
+				page-break-after: always;
+				transform: none !important;
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<div id="topToolbar" style="height:36px; background:#262626; border-bottom:1px solid #000; display:flex; align-items:center; padding:0 10px; flex-shrink:0; z-index:101; gap:10px">
+		<img src="assets/impositionfix_mono_small.svg" style="height:24px; width:auto; display:block" alt="ImpositionFix">
+		<button id="btnAppInfo" class="toolbox-btn" style="width:auto; padding:4px; border:none; background:transparent; color:#aaa; cursor:pointer" title="About / License"><span class="material-icons">info</span></button>
+		<div style="height:20px; width:1px; background:#444; margin:0 5px"></div>
+		<div id="cookieConsentContainer" style="display:none; align-items:center; gap:5px; margin-right:5px; padding-right:10px; border-right:1px solid #444">
+			<button id="btnAcceptCookies" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; background:#2e7d32; border-color:#1b5e20" title="Save settings to device">Save Settings</button>
+			<button id="btnDeclineCookies" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; background:#c62828; border-color:#b71c1c" title="Do not save settings">Don't Save</button>
+			<div style="position:relative">
+				<span id="btnCookieInfo" class="material-icons" style="font-size:16px; color:#aaa; cursor:pointer" title="About storage">help_outline</span>
+				<div id="cookieInfoBalloon" style="display:none; position:absolute; top:26px; right:-8px; width:200px; background:#333; border:1px solid #555; padding:8px; border-radius:4px; z-index:1000; box-shadow:0 4px 10px rgba(0,0,0,0.5); font-size:11px; line-height:1.4; color:#ddd; text-align:left">
+					We use Local Storage to save your layouts, paper formats, and profiles on this device.
+					<div style="position:absolute; top:-5px; right:8px; width:10px; height:10px; background:#333; border-top:1px solid #555; border-left:1px solid #555; transform:rotate(45deg)"></div>
+				</div>
+			</div>
+		</div>
+		<button id="impNormalBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Normal (1-)"><span class="material-icons" style="font-size:16px">arrow_forward</span> 1-N</button>
+		<button id="imp2sidedBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="2-Sided (1-:p1-)"><span class="material-symbols-outlined" style="font-size:16px">flip_to_back</span> 2-Sided</button>
+		<button id="impRepeatBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Front-Back"><span class="material-icons" style="font-size:16px">apps</span>Repeat</button>
+		<button id="impFillBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Fill Empty Slots"><span class="material-icons" style="font-size:16px">shower</span> Fill</button>
+		<button id="impReverseBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Reverse (last-1)"><span class="material-icons" style="font-size:16px">arrow_forward</span> N-1</button>
+		<button id="impBookletBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Booklet"><span class="material-icons" style="font-size:16px">menu_book</span> Booklet</button>
+		<button id="impRLBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Right-to-Left Fill"><span class="material-icons" style="font-size:16px">format_align_right</span> RL</button>
+		<button id="impSnakeBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Snake Fill (LR-RL)"><span class="material-symbols-outlined" style="font-size:16px">conversion_path</span> Snake</button>
+		<button id="impEvenBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Even Pages"><span class="material-symbols-outlined" style="font-size:16px">flex_wrap</span> Even</button>
+		<button id="impOddBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Odd Pages"><span class="material-symbols-outlined" style="font-size:16px; transform: scaleY(-1)">flex_wrap</span> Odd</button>	
+		<button id="impBottomBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Bottom-Up Fill"><span class="material-symbols-outlined" style="font-size:16px">arrow_upward</span> BT</button>
+
+		<button id="impBlankBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Add Blank Page (0)"><span class="material-icons" style="font-size:16px">check_box_outline_blank</span> 0</button>
+		<div style="position:relative">
+			<button id="nupToolsBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="n-up Tools"><span class="material-icons" style="font-size:16px">expand_more</span> n-up</button>
+			<div id="nupToolsDropdown" style="display:none; position:absolute; top:100%; left:0; background:#262626; border:1px solid #444; padding:5px; flex-direction:column; gap:5px; min-width:120px; z-index:1000; box-shadow:0 4px 6px rgba(0,0,0,0.5)">
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">4-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">8-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">12-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">16-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">20-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">24-up</button>
+				<button class="toolbox-btn" style="text-align:left; font-size:11px">28-up</button>
+			</div>
+		</div>
+		<div style="margin-left:auto; display:flex; align-items:center; gap:10px">
+			<div style="height:20px; width:1px; background:#444; margin:0 5px"></div>
+			<div style="display:flex; align-items:center; gap:5px">
+				<select id="layoutSelect" class="toolbox-input" style="width:120px; height:24px; font-size:11px"></select>
+				<button id="saveLayoutBtn" class="toolbox-btn" style="width:auto; padding:0 6px; height:24px" title="Save Layout">+</button>
+				<button id="deleteLayoutBtn" class="toolbox-btn" style="width:auto; padding:0 6px; height:24px" title="Delete Layout">-</button>
+			</div>
+			<button id="pageNumbersBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Toggle Page Numbers"><span class="material-icons" style="font-size:16px">looks_one</span>Page numbers</button>
+			<button id="fitSheetBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Fit to Screen"><span class="material-icons" style="font-size:16px">fit_screen</span> Fit</button>
+			<input id="sheetZoomSlider" type="range" min="10" max="200" value="100" class="toolbox-slider" style="width:100px; margin-top:0" title="Sheet Zoom">
+			<span id="sheetZoomValue" style="color:#ccc; font-size:11px; width:35px; text-align:right">100%</span>
+		</div>
+	</div>
+	<div class="main-layout" style="display:flex; flex:1; position:relative; overflow:hidden; width:100%">
+	<div class="activity-bar" style="display:flex; flex-direction:column; height:100%">
+		<div style="flex:1; overflow-y:auto; width:100%; scrollbar-width:none">
+		<div id="toolSelectBtn" class="activity-btn" title="Move Object">
+			<span class="material-symbols-outlined">drag_pan</span>
+		</div>
+		<div id="toolSwapBtn" class="activity-btn" title="Swap Slots (Drag & Drop, Shift=All Sheets)">
+			<span class="material-icons">swap_horiz</span>
+		</div>
+		<div id="toolSelectSlotBtn" class="activity-btn" title="Select Slot (Click=Single, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'single')">
+			<span class="material-icons">touch_app</span>
+		</div>
+		<div id="toolRotateBtn" class="activity-btn" title="Rotate Object">
+			<span class="material-icons">rotate_right</span>
+		</div>
+		<div id="toolScaleBtn" class="activity-btn" title="Scale Object">
+			<span class="material-icons">open_in_full</span>
+		</div>
+		<div id="toolSkewBtn" class="activity-btn" title="Skew Object">
+			<span class="material-icons">transform</span>
+		</div>
+		<div id="toolSelectRowBtn" class="activity-btn" title="Select Row (Click=Row, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'row')">
+			<span class="material-symbols-outlined">splitscreen_bottom</span>
+		</div>
+		<div id="toolSelectColBtn" class="activity-btn" title="Select Column (Click=Col, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'col')">
+			<span class="material-symbols-outlined">splitscreen_right</span>
+		</div>
+		</div>
+		<a href="https://ko-fi.com/olegasodinas" target="_blank" class="activity-btn" title="Support on Ko-fi" style="margin-top:auto; flex-shrink:0; text-decoration:none; display:flex; align-items:center; justify-content:center; color:#aaa; position:relative; overflow:visible">
+			<img src="assets/kofi_symbol.svg" style="width:30px; height:auto; display:block; animation: kofiIconFade 20s infinite ease-in-out">
+			<div style="position:absolute; left:0; top:0; height:100%; background:#333; display:flex; align-items:center; overflow:hidden; white-space:nowrap; z-index:20; border-radius:0 25px 25px 0; box-shadow:2px 0 5px rgba(0,0,0,0.3); animation: kofiLogoSlide 20s infinite ease-in-out">
+				<img src="assets/kofi_logo.svg" style="height:20px; margin-left:12px; margin-right:15px; display:block">
+			</div>
+		</a>
+	</div>
+
+	<div class="toolbox" style="left:50px">
+		<div class="toolbox-row">
+			<h3>File</h3>
+			<label class="toolbox-btn" for="fileInput" style="margin-bottom:3.5px; width:auto">Select PDF / Image</label>
+			<label id="printBtn" class="toolbox-btn" for="printBtn" style="margin-bottom:4px; width:auto">Generate PDF</label>
+			<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto">Save Preview</label>
+			<input id="fileInput" type="file" multiple style="display:none">
+			<div class="toolbox-info" id="fileInfo" style="white-space:pre-wrap">No file selected</div>
+			<div class="toolbox-info" id="boxInfo" style="margin-top:4px; color:#aaa; white-space:pre-wrap"></div>
+			<hr>
+			<div class="toolbox-row">
+				<h3>Sheet</h3>
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Format</label>
+				<div style="display:flex; gap:5px; margin-bottom:4px">
+					<select id="paperSelect" class="toolbox-input" style="flex:1">
+					<option value="320,450" selected>SRA3 (320 × 450 mm)</option>
+					<option value="320,460" selected>SRA3+ (320 × 460 mm)</option>
+					<option value="320,225">SRA4 (320 × 225 mm)</option>
+					<option value="320,230">SRA4+ (320 × 230 mm)</option>
+					<option value="640,900">SRA1 (640 × 900 mm)</option>
+					<option value="450,640">SRA2 (450 × 640 mm)</option>
+					<option value="598,841">A1 (598 × 841 mm)</option>
+					<option value="420,594">A2 (420 × 594 mm)</option>
+					<option value="297,420">A3 (297 × 420 mm)</option>
+					<option value="210,297">A4 (210 × 297 mm)</option>
+					<option value="148,210">A5 (148 × 210 mm)</option>
+					<option value="105,148">A6 (105 × 148 mm)</option>
+					<option value="215.9,279.4">Letter (8.5 × 11 in)</option>
+					<option value="215.9,355.6">Legal (8.5 × 14 in)</option>
+				</select>
+					<button id="savePaperBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Save Format">+</button>
+					<button id="deletePaperBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Delete Format">-</button>
+				</div>
+				<div style="display:flex; gap:5px; margin-bottom:8px">
+					<div style="flex:1">
+						<label style="display:block; font-size:9px; color:#888">W (mm)</label>
+						<input id="sheetWidthInput" type="number" step="0.1" class="toolbox-input">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:9px; color:#888">H (mm)</label>
+						<input id="sheetHeightInput" type="number" step="0.1" class="toolbox-input">
+					</div>
+				</div>
+				<div style="display:flex; gap:5px">
+					<button id="orientPortraitBtn" class="toolbox-btn active" style="flex:1; display:flex; justify-content:center; align-items:center" title="Portrait"><span class="material-icons" style="font-size:16px">crop_portrait</span></button>
+					<button id="orientLandscapeBtn" class="toolbox-btn" style="flex:1; display:flex; justify-content:center; align-items:center" title="Landscape"><span class="material-icons" style="font-size:16px">crop_landscape</span></button>
+				</div>
+			</div>
+			<hr>
+			<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Page Range</label>
+				<button id="clearPageRangeBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px">Clear</button>
+			</div>
+			<textarea id="pageRangeInput" type="text" class="toolbox-input" placeholder="e.g. 1-5"></textarea>
+			<div style="font-size:10px; color:#888; margin-top:4px; line-height:1.2">
+				<code>1-</code> - Normal range Left to Right<br>
+				<code>last-1</code> - Reverse range Left to Right.<br>
+				<code> -1-5</code> - Flip sides Right to Left.<br>
+				<code>f1:p1-5</code> - Use file 1 and pages 1 to 5.<br>
+			</div>
+		</div>
+
+		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
+			<button id="ltTabGrid" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Grid</button>
+			<button id="ltTabColor" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Color</button>
+			<button id="ltTabData" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Data</button>
+		</div>
+
+		<div id="ltContentGrid">
+			<h3>Preview Grid</h3>
+		<div class="toolbox-row">
+			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="autoGridCheck" type="checkbox" checked> Auto Calculate Rows/Cols
+			</label>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Rows</label>
+				<input id="rowsInput" type="number" step="1" value="1" min="1" class="toolbox-input">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Cols</label>
+				<input id="colsInput" type="number" step="1" value="2" min="1" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid #666">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset X (mm)</label>
+				<input id="markGapXInput" type="number" step="1" value="1" class="toolbox-input">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset Y (mm)</label>
+				<input id="markGapYInput" type="number" step="1" value="1" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px;">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed X (mm)</label>
+				<input id="cropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed Y (mm)</label>
+				<input id="cropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px;">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed X (mm)</label>
+				<input id="innerCropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed Y (mm)</label>
+				<input id="innerCropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row">
+			<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner Mark Style</label>
+			<select id="innerCropStyleSelect" class="toolbox-input">
+				<option value="solid">Solid</option>
+				<option value="dashed">Dashed</option>
+				<option value="dotted">Dotted</option>
+			</select>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position X (px)</label>
+				<input id="boxXInput" type="number" step="10" value="0" class="toolbox-input">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position Y (px)</label>
+				<input id="boxYInput" type="number" step="10" value="0" class="toolbox-input">
+			</div>
+		</div>
+		</div>
+
+		<div id="ltContentColor" style="display:none">
+			<h3>Color Correction</h3>
+			<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Preview Profile</label>
+			<div style="display:flex; gap:5px; margin-bottom:4px">
+				<select id="iccProfileSelect" class="toolbox-input" style="flex:1">
+				<option value="srgb" selected>sRGB (Default)</option>
+				<option value="fix-cmyk">Fix CMYK (Boost Saturation)</option>
+				<option value="sim-print">Simulate Print (Matte)</option>
+				<option value="sim-gloss">Simulate Print (Gloss)</option>
+				<option value="adobe-rgb">Adobe RGB (Simulated)</option>
+				<option value="apple-rgb">Apple RGB (Simulated)</option>
+				<option value="grayscale">Grayscale</option>
+				<option value="sepia">Sepia</option>
+				<option value="invert">Invert Colors</option>
+			</select>
+				<button id="saveProfileBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Save Profile">+</button>
+				<button id="deleteProfileBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Delete Profile">-</button>
+			</div>
+			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">CIELAB Correction</label>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:10px; color:#888; width:10px">L</span>
+				<input id="labLSlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Lightness">
+			</div>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:10px; color:#888; width:10px">A</span>
+				<input id="labASlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Green - Red">
+			</div>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:10px; color:#888; width:10px">B</span>
+				<input id="labBSlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Blue - Yellow">
+			</div>
+			<button id="resetLabBtn" class="toolbox-btn" style="font-size:10px; padding:2px; margin-bottom:4px">Reset LAB</button>
+			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">Contrast & Saturation</label>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:10px; color:#888; width:10px">C</span>
+				<input id="contrastSlider" type="range" min="0" max="200" value="100" class="toolbox-slider" style="flex:1" title="Contrast">
+			</div>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:10px; color:#888; width:10px">S</span>
+				<input id="saturationSlider" type="range" min="0" max="200" value="100" class="toolbox-slider" style="flex:1" title="Saturation">
+			</div>
+			<button id="resetContrastSatBtn" class="toolbox-btn" style="font-size:10px; padding:2px; margin-bottom:4px">Reset Contrast/Sat</button>
+			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">Curves (RGB)</label>
+			<select id="curveChannelSelect" class="toolbox-input" style="margin-bottom:4px">
+				<option value="master">Master (RGB)</option>
+				<option value="red">Red</option>
+				<option value="green">Green</option>
+				<option value="blue">Blue</option>
+			</select>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+				<span style="font-size:9px; color:#888; width:20px">25%</span>
+				<input id="curveShadowSlider" type="range" min="0" max="100" value="25" class="toolbox-slider" style="flex:1">
+			</div>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+				<span style="font-size:9px; color:#888; width:20px">50%</span>
+				<input id="curveMidSlider" type="range" min="0" max="100" value="50" class="toolbox-slider" style="flex:1">
+			</div>
+			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
+				<span style="font-size:9px; color:#888; width:20px">75%</span>
+				<input id="curveHighSlider" type="range" min="0" max="100" value="75" class="toolbox-slider" style="flex:1">
+			</div>
+			<button id="resetCurvesBtn" class="toolbox-btn" style="font-size:10px; padding:2px">Reset Curves</button>
+			<hr>
+			<div class="toolbox-row" style="margin-top:8px">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Frame Background (CMYK)</label>
+				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+					<span style="font-size:9px; color:#0cc; width:10px">C</span>
+					<input id="bgCSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
+				</div>
+				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+					<span style="font-size:9px; color:#c0c; width:10px">M</span>
+					<input id="bgMSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
+				</div>
+				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+					<span style="font-size:9px; color:#cc0; width:10px">Y</span>
+					<input id="bgYSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
+				</div>
+				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
+					<span style="font-size:9px; color:#888; width:10px">K</span>
+					<input id="bgKSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
+				</div>
+				<label style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:10px; color:#ccc; cursor:pointer">
+					<input id="bgTransparentCheckbox" type="checkbox" checked> Transparent Background
+				</label>
+			</div>
+		</div>
+
+		<div id="ltContentData" style="display:none">
+			<h3>Data Merge</h3>
+			<div class="toolbox-row">
+				<p style="font-size:11px; color:#aaa">Data merge functionality coming soon.</p>
+			</div>
+		</div>
+		<div style="margin-top:10px; padding-top:10px; border-top:1px solid #666">
+			<details>
+				<summary style="font-size:11px; color:#ccc; cursor:pointer; user-select:none">Debug Output</summary>
+				<textarea id="pdfDebugOutput" style="width:100%; height:150px; margin-top:5px; font-family:monospace; font-size:10px; background:#222; color:#0f0; border:1px solid #444; resize:vertical; box-sizing:border-box" readonly></textarea>
+			</details>
+		</div>
+		
+	</div>
+
+	<div class="workspace">
+		<div class="page">
+			<div id="previewContainer" class="preview-grid-layer" style="display:flex; gap:0; justify-content:center; align-content:center; flex-wrap:wrap; width:100%; height:100%">
+				<div class="preview" id="filePreview" aria-live="polite"></div>
+			</div>
+		</div>
+	</div>
+
+	<div class="toolbox" style="right:0; left:auto; border-right:none; border-left:1px solid #000">
+		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
+			<button id="rtTabTransform" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Transform</button>
+			<button id="rtTabLayout" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Layout</button>
+		</div>
+
+		<div id="rtContentTransform">
+		<div class="toolbox-row">
+			<h3>Transform</h3>
+			<label><span>Rotation</span></label>
+			<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+			<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
+			<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="smartFitCheckbox" type="checkbox" disabled>
+				<span>Rotate & scale to fit</span>
+			</label>
+			<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="rotPageCheck"> Specific Page</label>
+				<input type="text" id="rotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row">
+			<label><span>Scale</span> <span id="scaleValue">100%</span></label>
+			<input id="scaleSlider" type="range" min="50" max="200" step="1" value="100" class="toolbox-slider" disabled>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Width (mm)</label>
+				<input id="widthInput" type="number" step="1" class="toolbox-input" disabled>
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Height (mm)</label>
+				<input id="heightInput" type="number" step="1" class="toolbox-input" disabled>
+			</div>
+		</div>
+		<div class="toolbox-row" style="margin-top:0px">
+			<label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="unlockRatioCheckbox" type="checkbox" disabled>
+				<span>Unlock aspect ratio</span>
+			</label>
+			<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="scalePageCheck"> Specific Page</label>
+				<input type="text" id="scalePageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position X (mm)</label>
+				<input id="offsetXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+				<input id="offsetXSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position Y (mm)</label>
+				<input id="offsetYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+				<input id="offsetYSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+			</div>
+		</div>
+		<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+			<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="offsetPageCheck"> Specific Page</label>
+			<input type="text" id="offsetPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew X (deg)</label>
+				<input id="skewXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+				<input id="skewXSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew Y (deg)</label>
+				<input id="skewYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+				<input id="skewYSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+			</div>
+		</div>
+		<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+			<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="slotPageCheck"> Specific Page</label>
+			<input type="text" id="slotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+		</div>
+		</div>
+
+		<div id="rtContentLayout" style="display:none">
+		<label style="margin-bottom:-16px;"><h3>Content frame</h3></label>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size X (mm)</label>
+				<input id="slotWidthInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs()">
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size Y (mm)</label>
+				<input id="slotHeightInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs()">
+			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px">
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand LR (mm)</label>
+				<div style="display:flex; gap:2px">
+					<input id="expandLeftInput" type="number" step="1" value="0" class="toolbox-input" placeholder="L" oninput="window.updateSlotSizeFromInputs()">
+					<input id="expandRightInput" type="number" step="1" value="0" class="toolbox-input" placeholder="R" oninput="window.updateSlotSizeFromInputs()">
+				</div>
+			</div>
+			<div style="flex:1">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand TB (mm)</label>
+				<div style="display:flex; gap:2px">
+					<input id="expandTopInput" type="number" step="1" value="0" class="toolbox-input" placeholder="T" oninput="window.updateSlotSizeFromInputs()">
+					<input id="expandBottomInput" type="number" step="1" value="0" class="toolbox-input" placeholder="B" oninput="window.updateSlotSizeFromInputs()">
+				</div>
+			</div>
+		</div>
+		</div>
+
+		<hr>
+		<div class="toolbox-row">
+			<h3>Quality</h3>
+			<label><span>Raster DPI for preview</span></label>
+			<input id="dpiInput" type="number" min="72" max="600" step="1" value="96" class="toolbox-input" disabled>
+	
+			<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="nativeCheckbox" type="checkbox" disabled>
+				<span>Preview Original PDF</span>
+			</label>
+		</div>
+	</div>
+	</div>
+	<div id="statusBar" style="height:24px; background:#262626; border-top:1px solid #000; display:flex; align-items:center; padding:0 10px; font-family:sans-serif; font-size:11px; color:#aaa; z-index:100; gap:20px; flex-shrink:0">
+		<span id="statusFileDim">File: -</span>
+		<span id="statusSlotSize">Slot: -</span>
+		<span id="statusInfo" style="margin-left:auto"></span>
+	</div>
+	<!-- SVG Filter for LAB Adjustment -->
+	<svg style="position:absolute; width:0; height:0; overflow:hidden" aria-hidden="true">
+		<defs>
+			<filter id="cielab-adjust" color-interpolation-filters="sRGB">
+				<feColorMatrix id="cielab-matrix" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+				<feComponentTransfer id="cielab-curves">
+					<feFuncR id="curve-func-r" type="table" tableValues="0 0.25 0.5 0.75 1"/>
+					<feFuncG id="curve-func-g" type="table" tableValues="0 0.25 0.5 0.75 1"/>
+					<feFuncB id="curve-func-b" type="table" tableValues="0 0.25 0.5 0.75 1"/>
+				</feComponentTransfer>
+			</filter>
+		</defs>
+	</svg>
+
+	<!-- Info Modal -->
+	<div id="infoModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; align-items:center; justify-content:center">
+		<div style="background:#262626; width:600px; max-width:90%; max-height:80%; display:flex; flex-direction:column; border:1px solid #444; box-shadow:0 0 20px rgba(0,0,0,0.5); border-radius:4px">
+			<div style="padding:10px; border-bottom:1px solid #444; display:flex; justify-content:space-between; align-items:center; background:#333">
+				<div style="display:flex; gap:10px">
+					<button id="tabReadmeBtn" class="toolbox-btn active" style="width:auto; border-bottom:2px solid #00bcd4">Readme</button>
+					<button id="tabLicenseBtn" class="toolbox-btn" style="width:auto; border-bottom:2px solid transparent">App License</button>
+					<button id="tabThirdPartyBtn" class="toolbox-btn" style="width:auto; border-bottom:2px solid transparent">Third-Party</button>
+				</div>
+				<span id="closeInfoModal" class="material-icons" style="cursor:pointer; color:#ccc">close</span>
+			</div>
+			<div id="infoContent" style="padding:20px; overflow-y:auto; color:#ddd; font-family:sans-serif; line-height:1.5; font-size:13px">
+				<div id="readmeContent">
+					<p>
+					<strong>ImpositionFix™</strong> v0.1<br>
+					© 2026 Olegas Spausdinimas
+						<br><br>
+					This program is made to help with PDF/images imposition tasks 
+					for print production. It allows adjusting pages in way using smple 
+					command feauture by typing in "Page Range" field. Cropmarks are added
+					acutomatically which position can be adjusted.
+						<br><br>
+					The Color tab allows to preview color corrections but not apply them
+					to the output PDF yet.
+						<br><br>
+					Data tab is in experimental stage now.
+				</p>
+				</div>
+				<div id="licenseContent" style="display:none">
+					<h3 style="margin-top:0">License</h3>
+					<p>Copyright (C) 2026 Olegas Spausdinimas</p>
+					<p>
+					This program is free software: you can redistribute it and/or modify
+					it under the terms of the GNU General Public License as published by
+					the Free Software Foundation, either version 3 of the License, or
+					(at your option) any later version.</p>
+					<p>
+					This program is distributed in the hope that it will be useful,
+					but WITHOUT ANY WARRANTY; without even the implied warranty of
+					MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+					GNU General Public License for more details.</p>
+					<p>
+					You should have received a copy of the GNU General Public License</p>
+					<p>See <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" style="color:#00bcd4">GNU GPLv3</a> for more details.</p>
+					<p>
+					<h3 style="margin-top:0">Trademark</h3>
+					<p><strong>ImpositionFix™</strong> and the <strong>ImpositionFix logo</strong> are trademarks of Olegas Spausdinimas.</p></p>
+				</div>
+				<div id="thirdPartyContent" style="display:none; white-space: pre-wrap; font-family: monospace; font-size: 12px;">
+					<!-- Licenses will be loaded here -->
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+<script src="scripts/globals.js"></script>
+<script src="scripts/layout.js"></script>
+<script src="scripts/crops.js"></script>
+<script src="scripts/parser.js"></script>
+<script src="scripts/data.js"></script>
+<script src="libs/pdf-lib.min.js"></script>
+<script src="scripts/render.js"></script>
+<script src="scripts/ui.js"></script>
+
+
+</html>

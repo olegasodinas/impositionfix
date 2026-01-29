@@ -1,0 +1,256 @@
+/*
+    ImpositionFix
+    Copyright (C) 2026 Olegas Spausdinimas
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+		html,body{height:100%;margin:0;color-scheme:dark}
+		/* Define print page size */
+		@page { size: 320mm 450mm; margin: 0mm; }
+
+		/* Page container sized in mm so print-to-PDF matches physical size */
+		.page {
+			width: 320mm;
+			height: 450mm;
+			box-sizing: border-box;
+			background: #fff;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin: 0 auto;
+			position: relative;
+		}
+
+		.preview{ margin:0; border:none; border-radius:0; padding:0; background:#ffffff; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden }
+
+		/* Toolbox */
+		.toolbox {
+			position: fixed; top: 0; left: 0; bottom: 0; width: 260px;
+			background: #262626; color: #d4d4d4;
+			padding: 16px; box-sizing: border-box;
+			display: flex; flex-direction: column; gap: 16px;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			font-size: 12px; border-right: 1px solid #000;
+			z-index: 999; overflow-y: auto;
+		}
+		.toolbox h3 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #999; font-weight: 600; }
+		.toolbox-row { margin-bottom: 8px; }
+		.toolbox-row label { display: flex; justify-content: space-between; margin-bottom: 4px; color: #ccc; }
+		.toolbox-btn { display: block; width: 100%; background: #444; border: 1px solid #555; color: #fff; padding: 6px; text-align: center; border-radius: 2px; cursor: pointer; font-weight: 500; }
+		.toolbox-btn:hover { background: #555; }
+		.toolbox-input { width: 100%; background: #1a1a1a; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 2px; box-sizing: border-box; }
+		.toolbox-input:disabled { opacity: 0.5; cursor: not-allowed; }
+		.toolbox-slider { width: 100%; accent-color: #3b82f6; display: block; margin-top: 4px; }
+		.toolbox-info { font-size: 11px; color: #888; margin-top: 4px; line-height: 1.3; word-break: break-all; }
+		.toolbox hr { border: 0; border-top: 1px solid #3a3a3a; margin: 4px 0 12px 0; }
+
+		/* On screen, center the page in the window and add a faint background */
+		@media screen {
+			body { display:flex; align-items:flex-start; justify-content:center; background:#3a3a3a; padding:20px 0 20px 260px; overflow:auto; min-height:100vh; box-sizing:border-box; }
+			.page { box-shadow: none; transform-origin: top center; max-width: 100%; }
+			/* Scale down to fit tall pages into typical browser heights */
+			.viewport-fit { transform: scale(.74); }
+		}
+
+		/* For printing, remove shadows and scaling */
+		@media print {
+			html, body { height: auto !important; width: 100% !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+			body { display: block !important; background: none !important; }
+			.workspace { display: block !important; overflow: visible !important; height: auto !important; margin: 0 !important; padding: 0 !important; }
+			.toolbox, .activity-bar { display: none !important; }
+			.page { display: block !important; box-shadow:none !important; transform:none !important; margin:0 !important; overflow: visible !important; border:none !important; break-after: page; page-break-after: always; }
+			.preview { break-inside: avoid; page-break-inside: avoid; margin: 0; border-radius: 0; border: none; }
+			#previewContainer { display: grid; height: auto !important; min-height: 100% !important; }
+		}
+
+		body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; margin: 0; padding: 0; background-color: #525659; align-items: stretch; }
+		.toolbox { position: absolute !important; height: auto !important; top: 0; bottom: 0; z-index: 2; overflow-y: auto; }
+		.workspace { flex: 1; overflow: auto; display: flex; flex-direction: column; position: relative; z-index: 1; padding: 20px; box-sizing: border-box; gap: 10px; margin-left: 260px; margin-right: 260px; }
+		.page { margin: 0 auto; box-shadow: 0 0 20px rgba(0,0,0,0.5); max-width: none !important; flex-shrink: 0; }
+		.activity-bar { width: 50px; background-color: #333; display: flex; flex-direction: column; align-items: center; padding-top: 10px; z-index: 10; flex-shrink: 0; }
+		.activity-btn { color: #858585; cursor: pointer; width: 100%; height: 50px; display: flex; justify-content: center; align-items: center; border-left: 2px solid transparent; box-sizing: border-box; }
+		.activity-btn:hover { color: #fff; }
+		.activity-btn.active { color: #fff; border-left-color: #fff; }
+		.material-icons, .material-symbols-outlined { font-size: 24px; }
+		@media (max-width: 1000px) {
+			body { display: grid; grid-template-rows: auto 1fr; justify-content: start; }
+			.workspace { grid-row: 1 / -1; grid-column: 1; margin: 0; }
+			.toolbox { position: relative !important; top: 0 !important; bottom: auto !important; width: 260px !important; left: 0 !important; right: auto !important; border-left: none !important; border-right: 1px solid #000 !important; }
+			.toolbox:first-of-type { grid-row: 1; height: auto !important; }
+			.toolbox:last-of-type { grid-row: 2; height: 100% !important; border-top: 1px solid #000; }
+		}
+		.toolbox-btn.active { background-color: #888; color: #fff; border-color: #aaa; }
+		.preview.selected-frame { outline: 2px solid #00bcd4; box-shadow: 0 0 10px rgba(0, 188, 212, 0.5); z-index: 10; }
+		#pageRangeInput { resize: vertical; }
+
+		/* WebKit Scrollbars (Chrome, Opera, Edge) */
+		::-webkit-scrollbar { width: 10px; height: 10px; }
+		::-webkit-scrollbar-track { background: #222; }
+		::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; border: 2px solid #222; }
+		::-webkit-scrollbar-thumb:hover { background: #777; }
+		::-webkit-scrollbar-corner { background: #222; }
+
+		/* WebKit Range Inputs (Sliders) */
+		input[type=range] { appearance: none; -webkit-appearance: none; background: transparent; }
+		input[type=range]:focus { outline: none; }
+		input[type=range]::-webkit-slider-runnable-track {
+			width: 100%; height: 4px; cursor: pointer; background: #444; border-radius: 2px;
+		}
+		input[type=range]::-webkit-slider-thumb {
+			height: 14px; width: 14px; border-radius: 50%; background: #ccc; cursor: pointer;
+			appearance: none; -webkit-appearance: none; margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+		}
+
+		/* Firefox Range Inputs */
+		input[type=range]::-moz-range-track {
+			width: 100%; height: 4px; cursor: pointer; background: #444; border-radius: 2px;
+		}
+		input[type=range]::-moz-range-thumb {
+			height: 14px; width: 14px; border: none; border-radius: 50%; background: #ccc; cursor: pointer;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+		}
+
+		/* WebKit Number Input Spinners */
+		input[type=number]::-webkit-inner-spin-button, 
+		input[type=number]::-webkit-outer-spin-button {
+			filter: invert(1);
+		}
+		input[type=number]:hover::-webkit-inner-spin-button, 
+		input[type=number]:hover::-webkit-outer-spin-button {
+			filter: none;
+		}
+
+		/* No Spinners Class */
+		.no-spin::-webkit-inner-spin-button, 
+		.no-spin::-webkit-outer-spin-button { 
+			-webkit-appearance: none; 
+			appearance: none;
+			margin: 0; 
+			display: none;
+		}
+		.no-spin { -moz-appearance: textfield; appearance: textfield; }
+
+		/* Custom Checkboxes */
+		input[type=checkbox] {
+			appearance: none; -webkit-appearance: none;
+			width: 14px; height: 14px;
+			background: #262626; border: 1px solid #555; border-radius: 2px;
+			cursor: pointer; vertical-align: middle; position: relative;
+		}
+		input[type=checkbox]:checked {
+			background-color: #00bcd4; border-color: #00bcd4;
+		}
+		input[type=checkbox]:checked::after {
+			content: ''; position: absolute; left: 4px; top: 1px; width: 3px; height: 7px;
+			border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg);
+		}
+
+		@media print {
+			#topToolbar, #statusBar, .toolbox, .activity-bar { display: none !important; }
+			body, html { height: auto !important; overflow: visible !important; }
+			/* Ensure the main flex container allows overflow */
+			body > div { overflow: visible !important; height: auto !important; display: block !important; }
+			.workspace { overflow: visible !important; height: auto !important; }
+		}
+
+		/* Selection Highlighting */
+		.preview { position: relative; }
+		.preview.selected-frame {
+			outline: 8px solid #00bcd4 !important;
+			box-shadow: 0 0 8px rgba(0,0,0,0.5);
+			z-index: 100;
+		}
+		.preview.selected-frame::after {
+			content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+			background: rgba(0, 188, 212, 0.2);
+			pointer-events: none; z-index: 999;
+		}
+
+		@keyframes kofiIconFade {
+			0%, 1% { opacity: 1; transform: scale(1); }
+			3%, 15% { opacity: 0; transform: scale(0.5); }
+			18%, 100% { opacity: 1; transform: scale(1); }
+		}
+
+		@keyframes kofiLogoSlide {
+			0%, 1% { width: 0; opacity: 0; }
+			3%, 15% { width: 100px; opacity: 1; }
+			18%, 100% { width: 0; opacity: 0; }
+		}
+
+		.layout-field-highlight {
+			border-color: #00bcd4 !important;
+			box-shadow: 0 0 5px rgba(0, 188, 212, 0.5);
+		}
+
+		.help-btn {
+			margin-left: 4px;
+			width: 24px;
+			height: 24px;
+			padding: 0;
+			border-radius: 50%;
+			border: 1px solid #666;
+			background: #444;
+			color: #ccc;
+			cursor: pointer;
+			flex-shrink: 0;
+			line-height: 22px;
+			font-size: 16px;
+			font-weight: bold;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		}
+		.help-btn:hover { background: #555; color: #fff; border-color: #888; }
+
+		/* Balloon style */
+		.help-balloon {
+			display: none;
+			position: absolute;
+			max-width: 350px;
+			max-height: 85vh;
+			overflow-y: auto;
+			background: #f5f5f5;
+			color: #252525;
+			border: 1px solid #a2a9b1;
+			border-left: 5px solid #7a4848;
+			padding: 15px;
+			font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+			font-size: 13px;
+			line-height: 1.5;
+			z-index: 200;
+			box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+			border-radius: 2px;
+			text-align: left;
+		}
+		.help-balloon h3 {
+			color: #7a4848;
+			border-bottom: 1px solid #eaecf0;
+			margin: 10px 0 5px 0;
+			padding-bottom: 2px;
+			font-size: 110%;
+			font-weight: bold;
+		}
+		.help-balloon h3:first-child { margin-top: 0; }
+		.help-balloon p { margin: 0 0 8px 0; }
+		.help-balloon ul { margin: 0 0 8px 0; padding-left: 20px; list-style-type: square; color: #7a4848; }
+		.help-balloon li { color: #252525; margin-bottom: 2px; }
+		.help-balloon code { background-color: #e8e9eb; border: 1px solid #cdcfd4; color: #000; padding: 1px 4px; border-radius: 2px; font-family: monospace; font-size: 12px; }
+		.help-balloon i { font-style: italic; color: #555; }
+		.help-balloon .note {
+			background-color: #f1ecdf;
+			border-left: 5px solid #c3bea0;
+			padding: 8px 12px;
+			margin: 10px 0;
+			color: #444;
+		}
