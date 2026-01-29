@@ -19,7 +19,7 @@ This program is made to help with PDF or images imposition tasks for print produ
 - Color bars (incomplete)
 - Duplex marks (incomplete)
 - Preview pages as numbers
-- 
+- Swapping pages, rows or columns
 
 ## Commands
 
@@ -32,3 +32,7 @@ This program is made to help with PDF or images imposition tasks for print produ
 - odd, even: Filter pages
 - b(...): Bottom-up layout
 - -(...): Right-to-Left layout
+
+## Screenshots
+
+!(pictures/impositionfix.png)
