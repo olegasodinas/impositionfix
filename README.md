@@ -35,4 +35,4 @@ This program is made to help with PDF or images imposition tasks for print produ
 
 ## Screenshots
 
-!(pictures/impositionfix.png)
+<img src="pictures/impositionfix.png">
