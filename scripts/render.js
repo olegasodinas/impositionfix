@@ -17,6 +17,9 @@
 */
 
 	/* PDF Rendering & Loading */
+	// Helper to check if a file is an image
+	const isImage = (f) => f && (f.type && (f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png)$/i)));
+
 	// renderPages: renders PDF pages into preview according to rotation and scale
 	window.renderPages = function(rotation = 0, scale = 1, offset = null, pageIndex = null){
 		// Increment render ID to invalidate previous async renders
@@ -63,16 +66,32 @@
 			const pageOverrides = (window.__pageTransforms && window.__pageTransforms[pageNum]) || {};
 			
 			const effRotation = (typeof slotOverrides.rotation === 'number') ? slotOverrides.rotation : ((typeof pageOverrides.rotation === 'number') ? pageOverrides.rotation : rotation);
-			const globalSX = (typeof scale === 'object') ? scale.x : scale;
-			const globalSY = (typeof scale === 'object') ? scale.y : scale;
-			const effSX = (typeof slotOverrides.scaleX === 'number') ? slotOverrides.scaleX : ((typeof pageOverrides.scaleX === 'number') ? pageOverrides.scaleX : globalSX);
-			const effSY = (typeof slotOverrides.scaleY === 'number') ? slotOverrides.scaleY : ((typeof pageOverrides.scaleY === 'number') ? pageOverrides.scaleY : globalSY);
+			
+			const ignoreTransforms = !!window.__preferUpscaleNotRotate || !!window.__fillImage || !!window.__stretchImage;
+			
+			let globalSX = (typeof scale === 'object') ? scale.x : scale;
+			let globalSY = (typeof scale === 'object') ? scale.y : scale;
+			if(ignoreTransforms) { globalSX = 1; globalSY = 1; }
+
+			let effSX = (typeof slotOverrides.scaleX === 'number') ? slotOverrides.scaleX : ((typeof pageOverrides.scaleX === 'number') ? pageOverrides.scaleX : globalSX);
+			let effSY = (typeof slotOverrides.scaleY === 'number') ? slotOverrides.scaleY : ((typeof pageOverrides.scaleY === 'number') ? pageOverrides.scaleY : globalSY);
+			if(ignoreTransforms) { effSX = 1; effSY = 1; }
+
 			const effSkewX = (typeof slotOverrides.skewX === 'number') ? slotOverrides.skewX : ((typeof pageOverrides.skewX === 'number') ? pageOverrides.skewX : (window.__skewX || 0));
 			const effSkewY = (typeof slotOverrides.skewY === 'number') ? slotOverrides.skewY : ((typeof pageOverrides.skewY === 'number') ? pageOverrides.skewY : (window.__skewY || 0));
-			const effOffsetX = (typeof slotOverrides.offsetX === 'number') ? slotOverrides.offsetX : ((typeof pageOverrides.offsetX === 'number') ? pageOverrides.offsetX : (offset && typeof offset.x === 'number' ? offset.x : (window.__offsetX || 0)));
-			const effOffsetY = (typeof slotOverrides.offsetY === 'number') ? slotOverrides.offsetY : ((typeof pageOverrides.offsetY === 'number') ? pageOverrides.offsetY : (offset && typeof offset.y === 'number' ? offset.y : (window.__offsetY || 0)));
+			
+			let effOffsetX = (typeof slotOverrides.offsetX === 'number') ? slotOverrides.offsetX : ((typeof pageOverrides.offsetX === 'number') ? pageOverrides.offsetX : (offset && typeof offset.x === 'number' ? offset.x : (window.__offsetX || 0)));
+			let effOffsetY = (typeof slotOverrides.offsetY === 'number') ? slotOverrides.offsetY : ((typeof pageOverrides.offsetY === 'number') ? pageOverrides.offsetY : (offset && typeof offset.y === 'number' ? offset.y : (window.__offsetY || 0)));
+			if(ignoreTransforms) { effOffsetX = 0; effOffsetY = 0; }
+
 			const effSlotX = (typeof slotOverrides.slotX === 'number') ? slotOverrides.slotX : ((typeof pageOverrides.slotX === 'number') ? pageOverrides.slotX : (window.__slotX || 0));
 			const effSlotY = (typeof slotOverrides.slotY === 'number') ? slotOverrides.slotY : ((typeof pageOverrides.slotY === 'number') ? pageOverrides.slotY : (window.__slotY || 0));
+
+			const layout = slotOverrides.layout || pageOverrides.layout || {};
+			const currentW = (layout.width !== undefined) ? layout.width : globalW;
+			const currentH = (layout.height !== undefined) ? layout.height : globalH;
+			const currentAvailW = Math.max(currentW - inset.h, 100);
+			const currentAvailH = Math.max(currentH - inset.v, 100);
 
 			const pagePromise = (pageNum > 0) ? window.__pdfDoc.getPage(pageNum) : Promise.resolve(null);
 
@@ -85,26 +104,45 @@
 					const dpiScale = useNative ? 1 : ((window.__placedDpi || 96) / 96);
 
 					let viewport;
+					let logicalViewport;
 					let displayBaseScale = 1;
 					let r = 0;
 					let treatAsRotatedForScale = false;
+					let origW = 0;
+					let origH = 0;
 
 					if(page){
 						const orig = page.getViewport({ scale:1, rotation:0 });
+						origW = orig.width;
+						origH = orig.height;
 						let fit;
-						if(window.calculatePageFit && window.__fitToPage !== false){
-							fit = window.calculatePageFit(orig.width, orig.height, availW, availH, effRotation);
+						const usingSmartFit = (window.calculatePageFit && (ignoreTransforms || window.__stretchImage || (window.__fitToPage !== false && globalSX === 1 && globalSY === 1)));
+						if(usingSmartFit){
+							fit = window.calculatePageFit(orig.width, orig.height, currentAvailW, currentAvailH, effRotation, effSkewX, effSkewY);
 							window.__lastFitScale = fit.scale;
 						} else {
-							fit = { scale: window.__lastFitScale || 1, rotation: effRotation, treatAsRotated: false };
+							const nativeScale = 96 / 72;
+							fit = { scale: (window.__fitToPage === false) ? nativeScale : (window.__lastFitScale || nativeScale), rotation: effRotation, treatAsRotated: false };
 						}
 						displayBaseScale = fit.scale;
 						r = fit.rotation;
 						treatAsRotatedForScale = fit.treatAsRotated;
-						const rasterScale = displayBaseScale * dpiScale;
+
+						if(window.__stretchImage && fit.scaleX && fit.scaleY){
+							effSX = fit.scaleX;
+							effSY = fit.scaleY;
+						}
+						
+						// Logical viewport for CSS layout (unscaled by user transform)
+						logicalViewport = page.getViewport({ scale: displayBaseScale, rotation: treatAsRotatedForScale ? r : 0 });
+
+						// Raster viewport for Canvas resolution (scaled by user transform to save memory)
+						const contentScale = Math.max(effSX, effSY);
+						const rasterScale = displayBaseScale * dpiScale * contentScale;
 						viewport = page.getViewport({ scale: rasterScale, rotation: treatAsRotatedForScale ? r : 0 });
 					} else {
-						viewport = { width: availW * dpiScale, height: availH * dpiScale };
+						viewport = { width: currentAvailW * dpiScale, height: currentAvailH * dpiScale };
+						logicalViewport = { width: currentAvailW, height: currentAvailH };
 					}
 
 					let renderPromise, renderEl;
@@ -192,8 +230,8 @@
 						if(!renderEl) return;
 
 						// Common styles for render element (Canvas or SVG)
-						renderEl.style.width = (viewport.width / dpiScale) + 'px';
-						renderEl.style.height = (viewport.height / dpiScale) + 'px';
+						renderEl.style.width = logicalViewport.width + 'px';
+						renderEl.style.height = logicalViewport.height + 'px';
 						renderEl.style.display = window.__showPageNumbers ? 'flex' : 'block';
 						if(window.__previewProfileFilter) renderEl.style.filter = window.__previewProfileFilter;
 
@@ -227,6 +265,14 @@
 						const bakedRot = treatAsRotatedForScale ? r : 0;
 						pageContainer.dataset.bakedRotation = bakedRot;
 
+						if(origW && origH){
+							pageContainer.dataset.origW = origW;
+							pageContainer.dataset.origH = origH;
+						}
+						pageContainer.dataset.availW = currentAvailW;
+						pageContainer.dataset.availH = currentAvailH;
+						pageContainer.dataset.baseScale = displayBaseScale;
+
 						// If we're preferring upscale over rotation, avoid rotating the canvas.
 						pageContainer.dataset.rotation = treatAsRotatedForScale ? 0 : effRotation;
 						const appliedRotation = treatAsRotatedForScale ? 0 : effRotation;
@@ -249,10 +295,9 @@
 						if(page){
 							const createOverlay = (box, color) => {
 								if(!box || box.length < 4) return;
-								const r = viewport.convertToViewportRectangle(box);
-								// Convert raster pixels to CSS pixels
-								const x = Math.min(r[0], r[2]) / dpiScale, y = Math.min(r[1], r[3]) / dpiScale;
-								const w = Math.abs(r[2] - r[0]) / dpiScale, h = Math.abs(r[3] - r[1]) / dpiScale;
+								const r = logicalViewport.convertToViewportRectangle(box);
+								const x = Math.min(r[0], r[2]), y = Math.min(r[1], r[3]);
+								const w = Math.abs(r[2] - r[0]), h = Math.abs(r[3] - r[1]);
 								const div = document.createElement('div');
 								Object.assign(div.style, { position:'absolute', left:x+'px', top:y+'px', width:w+'px', height:h+'px', border:'1px solid '+color, boxSizing:'border-box', zIndex:10, pointerEvents:'none' });
 								pageContainer.appendChild(div);
@@ -305,8 +350,10 @@
 			window.__fileNames = [inputFileOrUrl.split('/').pop()];
 		}
 
-		// If multiple files are provided, merge them
-		if(files.length > 1 && window.PDFLib){
+		const needsConversion = files.length > 0 && (files.length > 1 || files.some(isImage));
+
+		// If multiple files are provided or images need conversion, merge/convert them
+		if(needsConversion && window.PDFLib){
 			try {
 				const { PDFDocument } = window.PDFLib;
 				const newDoc = await PDFDocument.create();
@@ -314,14 +361,62 @@
 
 				for(let file of files){
 					const buffer = await file.arrayBuffer();
-					const srcDoc = await PDFDocument.load(buffer);
-					const pageCount = srcDoc.getPageCount();
-					counts.push(pageCount);
-					
-					// Copy pages (preserves content better than embed+draw, unless fixing is needed)
-					// If shouldFix is true, we might want to use embed logic, but for now let's stick to copy for multi-import
-					const pages = await newDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-					pages.forEach(p => newDoc.addPage(p));
+					if(isImage(file)){
+						// --- DOWNSAMPLE FOR PREVIEW ---
+						const MAX_PREVIEW_DIM = 2000;
+						const img = new Image();
+						const objectUrl = URL.createObjectURL(new Blob([buffer]));
+						img.src = objectUrl;
+						await new Promise(r => img.onload = r);
+						URL.revokeObjectURL(objectUrl);
+
+						let w = img.width;
+						let h = img.height;
+						let imageBytes;
+
+						if (w > MAX_PREVIEW_DIM || h > MAX_PREVIEW_DIM) {
+							const canvas = document.createElement('canvas');
+							const ratio = Math.min(MAX_PREVIEW_DIM / w, MAX_PREVIEW_DIM / h);
+							canvas.width = Math.round(w * ratio);
+							canvas.height = Math.round(h * ratio);
+							const ctx = canvas.getContext('2d');
+							ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+							const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+							imageBytes = await fetch(dataUrl).then(res => res.arrayBuffer());
+						} else {
+							imageBytes = buffer;
+						}
+						// --- END DOWNSAMPLE ---
+
+						let image;
+						try {
+							if(file.type === 'image/png' || file.name.match(/\.png$/i)){
+								image = await newDoc.embedPng(imageBytes);
+							} else {
+								image = await newDoc.embedJpg(imageBytes);
+							}
+						} catch(e) {
+							try { image = await newDoc.embedPng(imageBytes); } catch(e2){}
+						}
+						if(image){
+							const page = newDoc.addPage([image.width, image.height]);
+							page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+							counts.push(1);
+						} else {
+							counts.push(0);
+						}
+					} else {
+						try {
+							const srcDoc = await PDFDocument.load(buffer);
+							const pageCount = srcDoc.getPageCount();
+							counts.push(pageCount);
+							const pages = await newDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+							pages.forEach(p => newDoc.addPage(p));
+						} catch(e){
+							console.error('Error loading PDF part', e);
+							counts.push(0);
+						}
+					}
 				}
 				window.__filePageCounts = counts;
 
@@ -338,13 +433,14 @@
 				}
 				
 				// Update info text
-				if(info) {
+				const infoEl = document.getElementById('fileInfo');
+				if(infoEl) {
 					window.renderFileList();
 				}
 
 			} catch(e) {
-				console.error('Error merging files', e);
-				if(files.length === 1) originalBuffer = await files[0].arrayBuffer(); // Fallback
+				console.error('Error merging/converting files', e);
+				if(files.length === 1 && !isImage(files[0])) originalBuffer = await files[0].arrayBuffer(); // Fallback
 			}
 		} else if(typeof inputFileOrUrl === 'string'){
 			url = inputFileOrUrl;
@@ -494,6 +590,7 @@
 			window.__skewX = 0;
 			window.__skewY = 0;
 			window.__previewProfileFilter = '';
+			window.__fitToPage = true;
 			const iccSelect = document.getElementById('iccProfileSelect');
 			if(iccSelect){
 				iccSelect.value = '';
@@ -502,7 +599,7 @@
 			if(scaleSlider){ scaleSlider.value = '100'; scaleSlider.disabled = false; }
 			if(rotationInput){ rotationInput.value = '0'; rotationInput.disabled = false; }
 			if(rotationSlider){ rotationSlider.value = '0'; rotationSlider.disabled = false; }
-			if(smartFitCheckbox){ smartFitCheckbox.disabled = false; smartFitCheckbox.checked = window.__preferUpscaleNotRotate; }
+			if(fitImageBtn){ fitImageBtn.classList.toggle('active', !!window.__preferUpscaleNotRotate); }
 			if(unlockRatioCheckbox){ unlockRatioCheckbox.disabled = false; unlockRatioCheckbox.checked = false; }
 			if(nativeCheckbox){ nativeCheckbox.disabled = false; nativeCheckbox.checked = false; window.__renderNative = false; }
 			const rotPageCheck = document.getElementById('rotPageCheck');
@@ -541,8 +638,39 @@
 				// compute preview pixel size using DPI (px per mm = dpi/25.4)
 				const dpi = 96;
 				const pxPerMm = dpi / 25.4;
-				const wpx = Math.max(1, fileInfo.widthMm * pxPerMm);
-				const hpx = Math.max(1, fileInfo.heightMm * pxPerMm);
+
+				let targetW = fileInfo.widthMm;
+				let targetH = fileInfo.heightMm;
+				let fitScale = 1;
+
+				// Check against sheet size
+				const sWIn = document.getElementById('sheetWidthInput');
+				const sHIn = document.getElementById('sheetHeightInput');
+				const sheetW = parseFloat(sWIn ? sWIn.value : 0) || 320;
+				const sheetH = parseFloat(sHIn ? sHIn.value : 0) || 450;
+
+				if(targetW > sheetW || targetH > sheetH){
+					const ratioW = sheetW / targetW;
+					const ratioH = sheetH / targetH;
+					fitScale = Math.min(ratioW, ratioH);
+					// Adjust slot size to fit the scaled image
+					targetW = targetW * fitScale;
+					targetH = targetH * fitScale;
+					
+					// Apply scale
+					window.__currentScaleX = fitScale;
+					window.__currentScaleY = fitScale;
+					
+					// Update UI
+					const scSl = document.getElementById('scaleSlider');
+					if(scSl) scSl.value = Math.round(fitScale * 100);
+					const scVal = document.getElementById('scaleValue');
+					if(scVal) scVal.textContent = Math.round(fitScale * 100) + '%';
+				}
+				window.__fitToPage = false;
+
+				const wpx = Math.max(1, targetW * pxPerMm);
+				const hpx = Math.max(1, targetH * pxPerMm);
 				window.setSlotFrame(wpx, hpx);
 				window.__trimW = wpx;
 				window.__trimH = hpx;
@@ -557,16 +685,19 @@
 				const pwIn = document.getElementById('slotWidthInput');
 				const phIn = document.getElementById('slotHeightInput');
 				if(pwIn && phIn) { 
-					pwIn.value = fileInfo.widthMm; 
-					phIn.value = fileInfo.heightMm;
+					pwIn.value = targetW.toFixed(2); 
+					phIn.value = targetH.toFixed(2);
 					pwIn.style.color = ''; phIn.style.color = '';
 				}
 				window.__fileWidthMm = fileInfo.widthMm;
 				window.__fileHeightMm = fileInfo.heightMm;
 				const statusFile = document.getElementById('statusFileDim');
 				if(statusFile) statusFile.textContent = `File: ${fileInfo.widthMm} × ${fileInfo.heightMm} mm`;
-				if(wIn) { wIn.value = fileInfo.widthMm; wIn.disabled = false; }
-				if(hIn) { hIn.value = fileInfo.heightMm; hIn.disabled = false; }
+				const statusSlot = document.getElementById('statusSlotSize');
+				if(statusSlot) statusSlot.textContent = 'Slot: -';
+				if(wIn) { wIn.value = (fileInfo.widthMm * fitScale).toFixed(2); wIn.disabled = false; }
+				if(hIn) { hIn.value = (fileInfo.heightMm * fitScale).toFixed(2); hIn.disabled = false; }
+				if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
 			}
 
 			// 4. Update sheet size (respects UI selection), calc grid fit, and render
@@ -698,10 +829,38 @@
 			await updateProgress('Loading source PDF...', 5);
 			debug('Starting PDF generation...');
 			debug('PDFLib available: ' + (!!window.PDFLib));
-			// Load source PDF
-			const existingPdfBytes = await fetch(window.__lastObjectURL).then(res => res.arrayBuffer());
-			const pdfDoc = await PDFDocument.create();
-			const srcDoc = await PDFDocument.load(existingPdfBytes);
+
+			// Rebuild source document from original files for full quality
+			let srcDoc;
+			const files = window.__importedFiles || [];
+			if (files.length > 0) {
+				srcDoc = await PDFDocument.create();
+				for (const file of files) {
+					const buffer = await file.arrayBuffer();
+					if (isImage(file)) {
+						let image;
+						if (file.type === 'image/png' || file.name.match(/\.png$/i)) {
+							image = await srcDoc.embedPng(buffer);
+						} else {
+							image = await srcDoc.embedJpg(buffer);
+						}
+						const page = srcDoc.addPage([image.width, image.height]);
+						page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+					} else {
+						const pdfToMerge = await PDFDocument.load(buffer);
+						const pagesToCopy = await srcDoc.copyPages(pdfToMerge, pdfToMerge.getPageIndices());
+						pagesToCopy.forEach(p => srcDoc.addPage(p));
+					}
+				}
+				// Save and reload to ensure image resources are correctly finalized for embedding
+				const bytes = await srcDoc.save();
+				srcDoc = await PDFDocument.load(bytes);
+			} else {
+				const existingPdfBytes = await fetch(window.__lastObjectURL).then(res => res.arrayBuffer());
+				srcDoc = await PDFDocument.load(existingPdfBytes);
+			}
+
+			const pdfDoc = await PDFDocument.create(); // This is the final output document
 			// Release raw buffer to help GC
 			// existingPdfBytes = null; 
 			debug('Source PDF loaded, pages: ' + srcDoc.getPageCount());
@@ -803,14 +962,19 @@
 						}
 					}
 
-					const scaleX = safe((typeof slotT.scaleX === 'number') ? slotT.scaleX : ((typeof pageT.scaleX === 'number') ? pageT.scaleX : (window.__currentScaleX || 1)));
-					const scaleY = safe((typeof slotT.scaleY === 'number') ? slotT.scaleY : ((typeof pageT.scaleY === 'number') ? pageT.scaleY : (window.__currentScaleY || 1)));
+					const ignoreTransforms = !!window.__preferUpscaleNotRotate || !!window.__fillImage || !!window.__stretchImage;
+
+					let scaleX = safe((typeof slotT.scaleX === 'number') ? slotT.scaleX : ((typeof pageT.scaleX === 'number') ? pageT.scaleX : (window.__currentScaleX || 1)));
+					let scaleY = safe((typeof slotT.scaleY === 'number') ? slotT.scaleY : ((typeof pageT.scaleY === 'number') ? pageT.scaleY : (window.__currentScaleY || 1)));
+					if(ignoreTransforms) { scaleX = 1; scaleY = 1; }
+
 					const rotation = safe((typeof slotT.rotation === 'number') ? slotT.rotation : ((typeof pageT.rotation === 'number') ? pageT.rotation : (window.__currentRotation || 0)));
 					const skewX = safe((typeof slotT.skewX === 'number') ? slotT.skewX : ((typeof pageT.skewX === 'number') ? pageT.skewX : (window.__skewX || 0)));
 					const skewY = safe((typeof slotT.skewY === 'number') ? slotT.skewY : ((typeof pageT.skewY === 'number') ? pageT.skewY : (window.__skewY || 0)));
 					
-					const rawOffsetX = (typeof slotT.offsetX === 'number') ? slotT.offsetX : ((typeof pageT.offsetX === 'number') ? pageT.offsetX : (window.__offsetX || 0));
-					const rawOffsetY = (typeof slotT.offsetY === 'number') ? slotT.offsetY : ((typeof pageT.offsetY === 'number') ? pageT.offsetY : (window.__offsetY || 0));
+					let rawOffsetX = (typeof slotT.offsetX === 'number') ? slotT.offsetX : ((typeof pageT.offsetX === 'number') ? pageT.offsetX : (window.__offsetX || 0));
+					let rawOffsetY = (typeof slotT.offsetY === 'number') ? slotT.offsetY : ((typeof pageT.offsetY === 'number') ? pageT.offsetY : (window.__offsetY || 0));
+					if(ignoreTransforms) { rawOffsetX = 0; rawOffsetY = 0; }
 
 					// Calculate expansion offset (to keep content centered in trim box)
 					const l = (layout.expandL !== undefined) ? layout.expandL : (window.__expandL || 0);
@@ -833,35 +997,82 @@
 					// Scale the embedded page
 					const pageW = embeddedPage.getWidth ? embeddedPage.getWidth() : (embeddedPage.width || 612);
 					const pageH = embeddedPage.getHeight ? embeddedPage.getHeight() : (embeddedPage.height || 792);
-					const scaledW = safe(pageW * (scaleX || 1));
-					const scaledH = safe(pageH * (scaleY || 1));
+
+					// Calculate Resolution Scale (Preview vs Original) to correct for downsampling
+					let resScale = 1;
+					if(window.__pdfDoc){
+						try {
+							const prevPage = await window.__pdfDoc.getPage(pageNum);
+							const prevVp = prevPage.getViewport({scale: 1});
+							if(prevVp.width > 0 && pageW > 0) resScale = prevVp.width / pageW;
+						} catch(e){}
+					}
+
+					let fitScale = 1;
+					// If ignoreTransforms is active (Fit Image), we treat global scale as 1
+					const globalSX = ignoreTransforms ? 1 : (window.__currentScaleX || 1);
+					const globalSY = ignoreTransforms ? 1 : (window.__currentScaleY || 1);
+					// Enable smart fit if explicitly requested (ignoreTransforms) OR if conditions are met (fitToPage + scale=1)
+					const usingSmartFit = (window.calculatePageFit && (ignoreTransforms || window.__stretchImage || (window.__fitToPage !== false && globalSX === 1 && globalSY === 1)));
+
+					if(usingSmartFit){
+						const fit = window.calculatePageFit(pageW, pageH, boxW, boxH, rotation, skewX, skewY);
+						fitScale = fit.scale;
+					}
+					
+					const finalScaleX = usingSmartFit ? (scaleX || 1) : ((scaleX || 1) * resScale);
+					const finalScaleY = usingSmartFit ? (scaleY || 1) : ((scaleY || 1) * resScale);
+
+					if(window.__stretchImage && usingSmartFit){
+						// For stretch, calculatePageFit returns scale=1 and scaleX/scaleY with the stretch factors
+						// We need to apply these factors.
+						// Note: calculatePageFit returns scaleX/scaleY which are absolute multipliers for the original size.
+						// But here we are applying them on top of 'fitScale' which is 1.
+						// We need to retrieve the specific X/Y scales from calculatePageFit again or pass them through.
+						// Since we re-call calculatePageFit here, let's use its output.
+						const fit = window.calculatePageFit(pageW, pageH, boxW, boxH, rotation, skewX, skewY);
+						if(fit.scaleX && fit.scaleY){
+							// Override the scales
+							// Note: finalScaleX/Y are currently 1 because ignoreTransforms=true sets scaleX=1.
+							// So we just multiply by the stretch factors.
+							// However, we must be careful not to double apply if fitScale was already set?
+							// In stretch mode, fit.scale is 1.
+							// So finalScaleX = 1 * 1 = 1.
+							// We want finalScaleX = fit.scaleX.
+							// But wait, 'scaledW' uses 'finalScaleX * fitScale'.
+							// So we can just set fitScale = 1 (which it is) and modify finalScaleX.
+							// But 'finalScaleX' is const.
+							// Let's adjust scaledW/H directly.
+						}
+					}
+
+					// Re-calculate to support stretch properly in PDF generation
+					let pdfScaleX = finalScaleX;
+					let pdfScaleY = finalScaleY;
+					
+					if(window.__stretchImage && usingSmartFit){
+						const fit = window.calculatePageFit(pageW, pageH, boxW, boxH, rotation, skewX, skewY);
+						pdfScaleX = fit.scaleX;
+						pdfScaleY = fit.scaleY;
+						fitScale = 1;
+					}
+
+					const scaledW = safe(pageW * pdfScaleX * fitScale);
+					const scaledH = safe(pageH * pdfScaleY * fitScale);
 
 					// Center position
 					const centerX = safe(boxX + boxW / 2);
 					const centerY = safe(boxY + boxH / 2);
 
+					const skewFactor = -1;
+
 					// Calculate rotation and skew adjustment
 					// pdf-lib transforms around the bottom-left corner (the draw coordinates).
 					// To keep the content centered, we must shift the draw coordinates based on the transforms.
-					const pdfRotRad = -(rotation || 0) * (Math.PI / 180);
-					const pdfSkewXRad = -(skewX || 0) * (Math.PI / 180);
-					const pdfSkewYRad = -(skewY || 0) * (Math.PI / 180);
+					const offsetVec = window.calculatePdfTransformOffset(scaledW, scaledH, rotation, skewX, skewY, skewFactor);
 
-					const halfW = scaledW / 2;
-					const halfH = scaledH / 2;
-					
-					// 1. Apply Skew to the center vector
-					// x' = x + y * tan(skewX)
-					// y' = y + x * tan(skewY)
-					const skewedX = halfW + halfH * Math.tan(pdfSkewXRad);
-					const skewedY = halfH + halfW * Math.tan(pdfSkewYRad);
-
-					// 2. Apply Rotation to the skewed vector
-					const vecX = skewedX * Math.cos(pdfRotRad) - skewedY * Math.sin(pdfRotRad);
-					const vecY = skewedX * Math.sin(pdfRotRad) + skewedY * Math.cos(pdfRotRad);
-
-					const drawX = safe((centerX + offsetX) - vecX);
-					const drawY = safe((centerY + pdfOffsetY) - vecY);
+					const drawX = safe((centerX + offsetX) - offsetVec.x);
+					const drawY = safe((centerY + pdfOffsetY) - offsetVec.y);
 					const drawW = safe(scaledW);
 					const drawH = safe(scaledH);
 
@@ -881,14 +1092,16 @@
 								);
 							}
 
-							newPage.drawPage(embeddedPage, {
+							const isPdfImage = embeddedPage instanceof window.PDFLib.PDFImage;
+							const drawFunc = isPdfImage ? newPage.drawImage : newPage.drawPage;
+							drawFunc.call(newPage, embeddedPage, {
 								x: drawCoords.x,
 								y: drawCoords.y,
 								width: drawCoords.width,
 								height: drawCoords.height,
 								rotate: degrees(-(rotation || 0)),
-								xSkew: degrees(-(skewY || 0)),
-								ySkew: degrees(-(skewX || 0))
+								xSkew: degrees(skewFactor * (skewY || 0)),
+								ySkew: degrees(skewFactor * (skewX || 0))
 							});
 
 							// Restore graphics state (remove clipping)

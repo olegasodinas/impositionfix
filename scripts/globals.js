@@ -22,7 +22,7 @@
 	const preview = document.getElementById('filePreview');
 	const previewElements = document.getElementsByClassName('preview');
 	const rotationInput = document.getElementById('rotationInput');
-	const smartFitCheckbox = document.getElementById('smartFitCheckbox');
+	const fitImageBtn = document.getElementById('fitImageBtn');
 	const previewContainer = document.getElementById('previewContainer');
 	const unlockRatioCheckbox = document.getElementById('unlockRatioCheckbox');
 	const scaleSlider = document.getElementById('scaleSlider');

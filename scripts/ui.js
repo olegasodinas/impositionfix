@@ -57,13 +57,6 @@
 				cookieInfoBalloon.style.display = (cookieInfoBalloon.style.display === 'block') ? 'none' : 'block';
 			}
 		});
-		document.addEventListener('click', (e) => {
-			if(cookieInfoBalloon && cookieInfoBalloon.style.display === 'block'){
-				if(!cookieInfoBalloon.contains(e.target) && e.target !== btnCookieInfo){
-					cookieInfoBalloon.style.display = 'none';
-				}
-			}
-		});
 	}
 
 	// --- Info Modal ---
@@ -162,7 +155,7 @@
 	if(input){
 		input.addEventListener('change', (ev)=>{
 			if(ev.target.files && ev.target.files.length > 0){
-				window.openPdfFile(ev.target.files);
+				if(window.openPdfFile) window.openPdfFile(ev.target.files);
 			}
 		});
 	}
@@ -1244,10 +1237,52 @@
 		});
 	}
 
-	// wire UI: smart fit checkbox
-	if(smartFitCheckbox){
-		smartFitCheckbox.addEventListener('change', ()=>{
-			window.__preferUpscaleNotRotate = smartFitCheckbox.checked;
+	// wire UI: fit/fill/stretch image buttons
+	const fillImageBtn = document.getElementById('fillImageBtn');
+	const stretchImageBtn = document.getElementById('stretchImageBtn');
+
+	if(fitImageBtn){
+		fitImageBtn.addEventListener('click', ()=>{
+			fitImageBtn.classList.toggle('active');
+			window.__preferUpscaleNotRotate = fitImageBtn.classList.contains('active');
+			if(window.__preferUpscaleNotRotate && fillImageBtn){
+				fillImageBtn.classList.remove('active');
+				window.__fillImage = false;
+			}
+			if(window.__preferUpscaleNotRotate && stretchImageBtn){
+				stretchImageBtn.classList.remove('active');
+				window.__stretchImage = false;
+			}
+			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		});
+	}
+
+	if(fillImageBtn){
+		fillImageBtn.addEventListener('click', ()=>{
+			fillImageBtn.classList.toggle('active');
+			window.__fillImage = fillImageBtn.classList.contains('active');
+			if(window.__fillImage && fitImageBtn){
+				fitImageBtn.classList.remove('active');
+				window.__preferUpscaleNotRotate = false;
+			}
+			if(window.__fillImage && stretchImageBtn){
+				stretchImageBtn.classList.remove('active');
+				window.__stretchImage = false;
+			}
+			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		});
+	}
+
+	if(stretchImageBtn){
+		stretchImageBtn.addEventListener('click', ()=>{
+			stretchImageBtn.classList.toggle('active');
+			window.__stretchImage = stretchImageBtn.classList.contains('active');
+			if(window.__stretchImage){
+				if(fitImageBtn) fitImageBtn.classList.remove('active');
+				if(fillImageBtn) fillImageBtn.classList.remove('active');
+				window.__preferUpscaleNotRotate = false;
+				window.__fillImage = false;
+			}
 			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 		});
 	}
@@ -2226,6 +2261,98 @@
 		});
 	}
 
+	// wire UI: Responsive Toolbar
+	const toolbarButtons = document.getElementById('toolbarButtons');
+	const toolbarOverflowBtn = document.getElementById('toolbarOverflowBtn');
+	const toolbarOverflowDropdown = document.getElementById('toolbarOverflowDropdown');
+	const toolbarRightSection = document.querySelector('.toolbar-right-section');
+
+	if(toolbarButtons && toolbarOverflowBtn && toolbarOverflowDropdown){
+		const handleToolbarResize = () => {
+			const overflowItems = Array.from(toolbarOverflowDropdown.children);
+			for(const item of overflowItems){
+				if(item.dataset.origin === 'right'){
+					if(toolbarRightSection) toolbarRightSection.appendChild(item);
+				} else {
+					toolbarButtons.appendChild(item);
+				}
+			}
+			toolbarOverflowBtn.style.display = 'none';
+			toolbarOverflowDropdown.style.display = 'none';
+			if(toolbarRightSection) toolbarRightSection.style.display = 'flex';
+
+			if(toolbarButtons.scrollWidth > toolbarButtons.clientWidth + 1){
+				toolbarOverflowBtn.style.display = 'flex';
+				
+				while(toolbarButtons.scrollWidth > toolbarButtons.clientWidth + 1){
+					let moved = false;
+					// Priority: Hide right section items first (from left to right)
+					if(toolbarRightSection && toolbarRightSection.children.length > 0){
+						const item = toolbarRightSection.firstElementChild;
+						item.dataset.origin = 'right';
+						toolbarOverflowDropdown.appendChild(item);
+						moved = true;
+					} else if(toolbarButtons.children.length > 0){
+						// Then hide main toolbar items (from right to left)
+						const item = toolbarButtons.lastElementChild;
+						item.dataset.origin = 'left';
+						if(toolbarOverflowDropdown.firstChild){
+							toolbarOverflowDropdown.insertBefore(item, toolbarOverflowDropdown.firstChild);
+						} else {
+							toolbarOverflowDropdown.appendChild(item);
+						}
+						moved = true;
+					}
+					if(!moved) break;
+				}
+			}
+		};
+
+		const resizeObserver = new ResizeObserver(() => { handleToolbarResize(); });
+		resizeObserver.observe(document.body);
+		
+		toolbarOverflowBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			// Close other menus
+			const left = document.getElementById('leftMenuDropdown');
+			const right = document.getElementById('rightMenuDropdown');
+			if(left) left.style.display = 'none';
+			if(right) right.style.display = 'none';
+			const isVisible = toolbarOverflowDropdown.style.display === 'flex';
+			toolbarOverflowDropdown.style.display = isVisible ? 'none' : 'flex';
+		});
+		document.addEventListener('click', () => { toolbarOverflowDropdown.style.display = 'none'; });
+	}
+
+	// wire UI: Left/Right Menu Buttons
+	const leftMenuBtn = document.getElementById('leftMenuBtn');
+	const leftMenuDropdown = document.getElementById('leftMenuDropdown');
+	const rightMenuBtn = document.getElementById('rightMenuBtn');
+	const rightMenuDropdown = document.getElementById('rightMenuDropdown');
+
+	const toggleMenu = (btn, dropdown) => {
+		if(!btn || !dropdown) return;
+		btn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const isVisible = dropdown.style.display === 'flex';
+			// Close others
+			if(leftMenuDropdown && dropdown !== leftMenuDropdown) leftMenuDropdown.style.display = 'none';
+			if(rightMenuDropdown && dropdown !== rightMenuDropdown) rightMenuDropdown.style.display = 'none';
+			if(toolbarOverflowDropdown) toolbarOverflowDropdown.style.display = 'none';
+			
+			dropdown.style.display = isVisible ? 'none' : 'flex';
+		});
+		dropdown.addEventListener('click', (e) => e.stopPropagation());
+	};
+
+	toggleMenu(leftMenuBtn, leftMenuDropdown);
+	toggleMenu(rightMenuBtn, rightMenuDropdown);
+	
+	document.addEventListener('click', () => {
+		if(leftMenuDropdown) leftMenuDropdown.style.display = 'none';
+		if(rightMenuDropdown) rightMenuDropdown.style.display = 'none';
+	});
+
 	// Wrap openPdfFile to enforce layout settings on load
 	const originalOpenPdf = window.openPdfFile;
 	window.openPdfFile = async function(arg){
@@ -2233,6 +2360,7 @@
 		if(layoutSelect && layoutSelect.value && layoutSelect.value !== 'Default'){
 			window.applyCurrentLayout();
 		}
+		if(window.fitSheetsToWorkspace) window.fitSheetsToWorkspace();
 	};
 
 	// Sync UI inputs to match the currently selected slot (or global defaults)
@@ -2326,3 +2454,39 @@
 			hIn.style.color = (Math.abs(parseFloat(hIn.value) - window.__fileHeightMm) > 0.05) ? 'red' : '';
 		}
 	};
+
+	// wire UI: Toolbox Toggles
+	const toggleLeftBtn = document.getElementById('toggleLeftToolbox');
+	const toggleRightBtn = document.getElementById('toggleRightToolbox');
+	const toolboxes = document.querySelectorAll('.toolbox');
+	const leftToolbox = toolboxes[0];
+	const rightToolbox = toolboxes[1];
+
+	if(toggleLeftBtn && leftToolbox){
+		toggleLeftBtn.addEventListener('click', () => {
+			leftToolbox.classList.toggle('visible');
+			document.body.classList.toggle('left-toolbox-visible');
+		});
+	}
+
+	if(toggleRightBtn && rightToolbox){
+		toggleRightBtn.addEventListener('click', () => {
+			rightToolbox.classList.toggle('visible');
+			document.body.classList.toggle('right-toolbox-visible');
+		});
+	}
+
+	if(workspace){
+		workspace.addEventListener('click', (e) => {
+			if(window.innerWidth <= 1000){
+				if(leftToolbox && leftToolbox.classList.contains('visible') && !leftToolbox.contains(e.target) && e.target !== toggleLeftBtn && !toggleLeftBtn.contains(e.target)){
+					leftToolbox.classList.remove('visible');
+					document.body.classList.remove('left-toolbox-visible');
+				}
+				if(rightToolbox && rightToolbox.classList.contains('visible') && !rightToolbox.contains(e.target) && e.target !== toggleRightBtn && !toggleRightBtn.contains(e.target)){
+					rightToolbox.classList.remove('visible');
+					document.body.classList.remove('right-toolbox-visible');
+				}
+			}
+		});
+	}

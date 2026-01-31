@@ -47,7 +47,7 @@
 </head>
 
 <body>
-	<div id="topToolbar" style="height:36px; background:#262626; border-bottom:1px solid #000; display:flex; align-items:center; padding:0 10px; flex-shrink:0; z-index:101; gap:10px">
+	<div id="topToolbar" style="height:36px; background:#262626; border-bottom:1px solid #000; display:flex; align-items:center; padding:0 10px; flex-shrink:0; z-index:101; gap:10px; overflow:visible">
 		<img src="assets/impositionfix_mono_small.svg" style="height:24px; width:auto; display:block" alt="ImpositionFix">
 		<button id="btnAppInfo" class="toolbox-btn" style="width:auto; padding:4px; border:none; background:transparent; color:#aaa; cursor:pointer" title="About / License"><span class="material-icons">info</span></button>
 		<div style="height:20px; width:1px; background:#444; margin:0 5px"></div>
@@ -62,6 +62,7 @@
 				</div>
 			</div>
 		</div>
+		<div id="toolbarButtons" style="display:flex; align-items:center; gap:4px; overflow:hidden; flex:1">
 		<button id="impNormalBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Normal (1-)"><span class="material-icons" style="font-size:16px">arrow_forward</span> 1-N</button>
 		<button id="imp2sidedBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="2-Sided (1-:p1-)"><span class="material-symbols-outlined" style="font-size:16px">flip_to_back</span> 2-Sided</button>
 		<button id="impRepeatBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Front-Back"><span class="material-icons" style="font-size:16px">apps</span>Repeat</button>
@@ -75,7 +76,7 @@
 		<button id="impBottomBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Bottom-Up Fill"><span class="material-symbols-outlined" style="font-size:16px">arrow_upward</span> BT</button>
 
 		<button id="impBlankBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Add Blank Page (0)"><span class="material-icons" style="font-size:16px">check_box_outline_blank</span> 0</button>
-		<div style="position:relative">
+		<div id="nupContainer" style="position:relative">
 			<button id="nupToolsBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="n-up Tools"><span class="material-icons" style="font-size:16px">expand_more</span> n-up</button>
 			<div id="nupToolsDropdown" style="display:none; position:absolute; top:100%; left:0; background:#262626; border:1px solid #444; padding:5px; flex-direction:column; gap:5px; min-width:120px; z-index:1000; box-shadow:0 4px 6px rgba(0,0,0,0.5)">
 				<button class="toolbox-btn" style="text-align:left; font-size:11px">4-up</button>
@@ -87,7 +88,12 @@
 				<button class="toolbox-btn" style="text-align:left; font-size:11px">28-up</button>
 			</div>
 		</div>
-		<div style="margin-left:auto; display:flex; align-items:center; gap:10px">
+		</div>
+		<div style="position:relative">
+			<button id="toolbarOverflowBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:none; gap:4px; align-items:center" title="More Tools"><span class="material-icons" style="font-size:16px">double_arrow</span></button>
+			<div id="toolbarOverflowDropdown" style="display:none; position:absolute; top:100%; right:0; background:#262626; border:1px solid #444; padding:5px; flex-direction:column; gap:5px; min-width:150px; z-index:1001; box-shadow:0 4px 6px rgba(0,0,0,0.5); max-height:60vh; overflow-y:auto"></div>
+		</div>
+		<div class="toolbar-right-section" style="margin-left:auto; display:flex; align-items:center; gap:10px; flex-shrink:0">
 			<div style="height:20px; width:1px; background:#444; margin:0 5px"></div>
 			<div style="display:flex; align-items:center; gap:5px">
 				<select id="layoutSelect" class="toolbox-input" style="width:120px; height:24px; font-size:11px"></select>
@@ -103,30 +109,30 @@
 	<div class="main-layout" style="display:flex; flex:1; position:relative; overflow:hidden; width:100%">
 	<div class="activity-bar" style="display:flex; flex-direction:column; height:100%">
 		<div style="flex:1; overflow-y:auto; width:100%; scrollbar-width:none">
-		<div id="toolSelectBtn" class="activity-btn" title="Move Object">
-			<span class="material-symbols-outlined">drag_pan</span>
-		</div>
-		<div id="toolSwapBtn" class="activity-btn" title="Swap Slots (Drag & Drop, Shift=All Sheets)">
-			<span class="material-icons">swap_horiz</span>
-		</div>
-		<div id="toolSelectSlotBtn" class="activity-btn" title="Select Slot (Click=Single, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'single')">
-			<span class="material-icons">touch_app</span>
-		</div>
-		<div id="toolRotateBtn" class="activity-btn" title="Rotate Object">
-			<span class="material-icons">rotate_right</span>
-		</div>
-		<div id="toolScaleBtn" class="activity-btn" title="Scale Object">
-			<span class="material-icons">open_in_full</span>
-		</div>
-		<div id="toolSkewBtn" class="activity-btn" title="Skew Object">
-			<span class="material-icons">transform</span>
-		</div>
-		<div id="toolSelectRowBtn" class="activity-btn" title="Select Row (Click=Row, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'row')">
-			<span class="material-symbols-outlined">splitscreen_bottom</span>
-		</div>
-		<div id="toolSelectColBtn" class="activity-btn" title="Select Column (Click=Col, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'col')">
-			<span class="material-symbols-outlined">splitscreen_right</span>
-		</div>
+			<div id="toolSelectBtn" class="activity-btn" title="Move Object">
+				<span class="material-symbols-outlined">drag_pan</span>
+			</div>
+			<div id="toolSwapBtn" class="activity-btn" title="Swap Slots (Drag & Drop, Shift=All Sheets)">
+				<span class="material-icons">swap_horiz</span>
+			</div>
+			<div id="toolSelectSlotBtn" class="activity-btn" title="Select Slot (Click=Single, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'single')">
+				<span class="material-icons">touch_app</span>
+			</div>
+			<div id="toolRotateBtn" class="activity-btn" title="Rotate Object">
+				<span class="material-icons">rotate_right</span>
+			</div>
+			<div id="toolScaleBtn" class="activity-btn" title="Scale Object">
+				<span class="material-icons">open_in_full</span>
+			</div>
+			<div id="toolSkewBtn" class="activity-btn" title="Skew Object">
+				<span class="material-icons">transform</span>
+			</div>
+			<div id="toolSelectRowBtn" class="activity-btn" title="Select Row (Click=Row, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'row')">
+				<span class="material-symbols-outlined">splitscreen_bottom</span>
+			</div>
+			<div id="toolSelectColBtn" class="activity-btn" title="Select Column (Click=Col, Ctrl+Click=Add, Shift+Click=All Sheets)" onclick="window.toggleSelectionMode(this, 'col')">
+				<span class="material-symbols-outlined">splitscreen_right</span>
+			</div>
 		</div>
 		<a href="https://ko-fi.com/olegasodinas" target="_blank" class="activity-btn" title="Support on Ko-fi" style="margin-top:auto; flex-shrink:0; text-decoration:none; display:flex; align-items:center; justify-content:center; color:#aaa; position:relative; overflow:visible">
 			<img src="assets/kofi_symbol.svg" style="width:30px; height:auto; display:block; animation: kofiIconFade 20s infinite ease-in-out">
@@ -136,13 +142,14 @@
 		</a>
 	</div>
 
+	<button id="toggleLeftToolbox" class="toolbox-toggle-btn left-btn" title="Toggle Left Toolbox"><span class="material-icons">chevron_right</span></button>
 	<div class="toolbox" style="left:50px">
 		<div class="toolbox-row">
 			<h3>File</h3>
 			<label class="toolbox-btn" for="fileInput" style="margin-bottom:3.5px; width:auto">Select PDF / Image</label>
 			<label id="printBtn" class="toolbox-btn" for="printBtn" style="margin-bottom:4px; width:auto">Generate PDF</label>
 			<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto">Save Preview</label>
-			<input id="fileInput" type="file" multiple style="display:none">
+			<input id="fileInput" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none">
 			<div class="toolbox-info" id="fileInfo" style="white-space:pre-wrap">No file selected</div>
 			<div class="toolbox-info" id="boxInfo" style="margin-top:4px; color:#aaa; white-space:pre-wrap"></div>
 			<hr>
@@ -381,6 +388,7 @@
 		</div>
 	</div>
 
+	<button id="toggleRightToolbox" class="toolbox-toggle-btn right-btn" title="Toggle Right Toolbox"><span class="material-icons">chevron_left</span></button>
 	<div class="toolbox" style="right:0; left:auto; border-right:none; border-left:1px solid #000">
 		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
 			<button id="rtTabTransform" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Transform</button>
@@ -388,76 +396,77 @@
 		</div>
 
 		<div id="rtContentTransform">
-		<div class="toolbox-row">
-			<h3>Transform</h3>
-			<label><span>Rotation</span></label>
-			<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-			<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
-			<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="smartFitCheckbox" type="checkbox" disabled>
-				<span>Rotate & scale to fit</span>
-			</label>
-			<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="rotPageCheck"> Specific Page</label>
-				<input type="text" id="rotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+			<div class="toolbox-row">
+				<h3>Transform</h3>
+				<div style="font-size:11px; color:#888; margin-bottom:4px; display:flex; gap:5px">
+					<button id="fitImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fit Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_large</span>Fit</button>
+					<button id="fillImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fill Image in Slot"><span class="material-icons" style="font-size:16px">aspect_ratio</span>Fill</button>
+					<button id="stretchImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Stretch Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_actual</span>Stretch</button>
+				</div>
+				<label><span>Rotation</span></label>
+				<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+				<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
+				<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="rotPageCheck"> Specific Page</label>
+					<input type="text" id="rotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+				</div>
 			</div>
-		</div>
-		<div class="toolbox-row">
-			<label><span>Scale</span> <span id="scaleValue">100%</span></label>
-			<input id="scaleSlider" type="range" min="50" max="200" step="1" value="100" class="toolbox-slider" disabled>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Width (mm)</label>
-				<input id="widthInput" type="number" step="1" class="toolbox-input" disabled>
+			<div class="toolbox-row">
+				<label><span>Scale</span> <span id="scaleValue">100%</span></label>
+				<input id="scaleSlider" type="range" min="50" max="200" step="1" value="100" class="toolbox-slider" disabled>
 			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Height (mm)</label>
-				<input id="heightInput" type="number" step="1" class="toolbox-input" disabled>
+			<div class="toolbox-row" style="display:flex; gap:10px">
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Width (mm)</label>
+					<input id="widthInput" type="number" step="1" class="toolbox-input" disabled>
+				</div>
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Height (mm)</label>
+					<input id="heightInput" type="number" step="1" class="toolbox-input" disabled>
+				</div>
 			</div>
-		</div>
-		<div class="toolbox-row" style="margin-top:0px">
-			<label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="unlockRatioCheckbox" type="checkbox" disabled>
-				<span>Unlock aspect ratio</span>
-			</label>
-			<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="scalePageCheck"> Specific Page</label>
-				<input type="text" id="scalePageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+			<div class="toolbox-row" style="margin-top:0px">
+				<label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
+					<input id="unlockRatioCheckbox" type="checkbox" disabled>
+					<span>Unlock aspect ratio</span>
+				</label>
+				<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="scalePageCheck"> Specific Page</label>
+					<input type="text" id="scalePageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+				</div>
 			</div>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position X (mm)</label>
-				<input id="offsetXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-				<input id="offsetXSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+			<div class="toolbox-row" style="display:flex; gap:10px">
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position X (mm)</label>
+					<input id="offsetXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+					<input id="offsetXSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+				</div>
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position Y (mm)</label>
+					<input id="offsetYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+					<input id="offsetYSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+				</div>
 			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position Y (mm)</label>
-				<input id="offsetYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-				<input id="offsetYSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+			<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="offsetPageCheck"> Specific Page</label>
+				<input type="text" id="offsetPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
 			</div>
-		</div>
-		<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-			<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="offsetPageCheck"> Specific Page</label>
-			<input type="text" id="offsetPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew X (deg)</label>
-				<input id="skewXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-				<input id="skewXSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+			<div class="toolbox-row" style="display:flex; gap:10px">
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew X (deg)</label>
+					<input id="skewXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+					<input id="skewXSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+				</div>
+				<div style="flex:1">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew Y (deg)</label>
+					<input id="skewYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+					<input id="skewYSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+				</div>
 			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew Y (deg)</label>
-				<input id="skewYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-				<input id="skewYSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+			<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="slotPageCheck"> Specific Page</label>
+				<input type="text" id="slotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
 			</div>
-		</div>
-		<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-			<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="slotPageCheck"> Specific Page</label>
-			<input type="text" id="slotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
-		</div>
 		</div>
 
 		<div id="rtContentLayout" style="display:none">
@@ -536,7 +545,7 @@
 			<div id="infoContent" style="padding:20px; overflow-y:auto; color:#ddd; font-family:sans-serif; line-height:1.5; font-size:13px">
 				<div id="readmeContent">
 					<p>
-					<strong>ImpositionFix™</strong> v0.1<br>
+					<strong>ImpositionFix™</strong> v0.2<br>
 					© 2026 Olegas Spausdinimas
 						<br><br>
 					This program is made to help with PDF/images imposition tasks 
@@ -579,6 +588,7 @@
 </body>
 <script src="scripts/globals.js"></script>
 <script src="scripts/layout.js"></script>
+<script src="scripts/transform.js"></script>
 <script src="scripts/crops.js"></script>
 <script src="scripts/parser.js"></script>
 <script src="scripts/data.js"></script>
