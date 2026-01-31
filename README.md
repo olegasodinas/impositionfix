@@ -39,3 +39,5 @@ https://mazu-tirazu-spaustuve.eu/impositionfix/
 ## Screenshots
 
 <img src="pictures/impositionfix.png">
+<img src="pictures/small_screen.png">
+
