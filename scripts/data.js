@@ -56,6 +56,7 @@ window.addPreviewOverlays = function(container, pageNum, offset) {
 	};
 
 	window.__overlays.forEach(overlay => {
+		if (overlay.visible === false) return;
 		// Position relative to trim box (offset by expansion)
 		const x = (parseFloat(overlay.x) || 0) * pxPerMm + offX;
 		const y = (parseFloat(overlay.y) || 0) * pxPerMm + offY;
@@ -149,6 +150,7 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 		const fontCache = newPage.doc.__fontCache;
 
 		for (const overlay of window.__overlays) {
+			if (overlay.visible === false) continue;
 			const xMm = parseFloat(overlay.x) || 0;
 			const yMm = parseFloat(overlay.y) || 0;
 			const xPt = xMm * ptPerMm;
@@ -238,162 +240,6 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
     }
 };
 
-// Cache for the Registration Mark PDF canvas (Preview)
-let __regMarkCanvas = null;
-let __regMarkLoading = false;
-let __regMarkError = false;
-
-let __pdfJsCallbacks = [];
-let __pdfJsLoadingStatus = 'none'; // 'none', 'loading'
-
-function ensurePdfJs(callback) {
-	if (window.pdfjsLib) {
-		callback(true);
-		return;
-	}
-	if (__pdfJsLoadingStatus === 'failed') {
-		callback(false);
-		return;
-	}
-	
-	__pdfJsCallbacks.push(callback);
-	if (__pdfJsLoadingStatus === 'loading') return;
-	__pdfJsLoadingStatus = 'loading';
-
-	const config = window.__pdfConfig || { src: 'libs/pdf.min.js', workerSrc: 'libs/pdf.worker.min.js' };
-	
-	// Check if script tag already exists (e.g. added by render.js)
-	let s = document.querySelector(`script[src="${config.src}"]`);
-	if (!s) {
-		s = document.createElement('script');
-		s.src = config.src;
-		document.head.appendChild(s);
-	}
-
-	// Add error listener to the script tag to catch load failures early
-	s.addEventListener('error', () => {
-		__pdfJsLoadingStatus = 'failed';
-	});
-
-	// Poll for window.pdfjsLib availability
-	let attempts = 0;
-	const checkInterval = setInterval(() => {
-		attempts++;
-		if (__pdfJsLoadingStatus === 'failed') {
-			clearInterval(checkInterval);
-			const cbs = __pdfJsCallbacks;
-			__pdfJsCallbacks = [];
-			cbs.forEach(cb => cb(false));
-			return;
-		}
-		if (window.pdfjsLib) {
-			clearInterval(checkInterval);
-			if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-				window.pdfjsLib.GlobalWorkerOptions.workerSrc = config.workerSrc;
-			}
-			__pdfJsLoadingStatus = 'loaded';
-			const cbs = __pdfJsCallbacks;
-			__pdfJsCallbacks = [];
-			cbs.forEach(cb => cb(true));
-		} else if (attempts > 200) { // ~10 seconds timeout
-			clearInterval(checkInterval);
-			__pdfJsLoadingStatus = 'failed';
-			console.error('pdf.js failed to load (timeout)');
-			const cbs = __pdfJsCallbacks;
-			__pdfJsCallbacks = [];
-			cbs.forEach(cb => cb(false));
-		}
-	}, 50);
-}
-
-function loadRegMarkPreview() {
-	if (__regMarkCanvas || __regMarkLoading || __regMarkError) return;
-	__regMarkLoading = true;
-
-	// Safety timeout to prevent infinite loading state
-	setTimeout(() => {
-		if (__regMarkLoading) {
-			console.warn("Reg mark loading timed out.");
-			__regMarkLoading = false;
-			__regMarkError = true;
-			if(window.drawSheetOverlays) window.drawSheetOverlays();
-		}
-	}, 15000);
-
-	ensurePdfJs((success) => {
-		if (!success || !window.pdfjsLib) {
-			__regMarkLoading = false;
-			__regMarkError = true;
-			if(window.drawSheetOverlays) window.drawSheetOverlays();
-			return;
-		}
-		const url = 'assets/reg_color_bars.pdf';
-		window.pdfjsLib.getDocument(url).promise.then(pdf => {
-			return pdf.getPage(1);
-		}).then(page => {
-			const scale = 3; // Render at higher resolution
-			const viewport = page.getViewport({ scale: scale });
-			const canvas = document.createElement('canvas');
-			canvas.width = viewport.width;
-			canvas.height = viewport.height;
-			canvas.dataset.pointWidth = viewport.width / scale; // Store original width in points
-			canvas.dataset.pointHeight = viewport.height / scale;
-			const ctx = canvas.getContext('2d');
-			return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
-				__regMarkCanvas = canvas;
-				__regMarkLoading = false;
-				if(window.drawSheetOverlays) window.drawSheetOverlays();
-			});
-		}).catch(e => {
-			console.error('Failed to load reg mark preview', e);
-			// Fallback: Create a programmatic registration mark
-			const scale = 3;
-			const pxPerMm = (96 / 25.4) * scale;
-			const canvas = document.createElement('canvas');
-			canvas.width = Math.ceil(60 * pxPerMm);
-			canvas.height = Math.ceil(10 * pxPerMm);
-			canvas.dataset.pointWidth = (canvas.width / scale) * (72 / 96); // Approx points
-			canvas.dataset.pointHeight = (canvas.height / scale) * (72 / 96);
-			const ctx = canvas.getContext('2d');
-			
-			// Registration Target (Circle + Cross)
-			const cx = 5 * pxPerMm;
-			const cy = 5 * pxPerMm;
-			const r = 3 * pxPerMm;
-			
-			ctx.strokeStyle = '#000000';
-			ctx.lineWidth = 1 * scale;
-			ctx.beginPath();
-			ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-			ctx.stroke();
-			
-			ctx.beginPath();
-			ctx.moveTo(cx - r - (2 * pxPerMm), cy);
-			ctx.lineTo(cx + r + (2 * pxPerMm), cy);
-			ctx.moveTo(cx, cy - r - (2 * pxPerMm));
-			ctx.lineTo(cx, cy + r + (2 * pxPerMm));
-			ctx.stroke();
-
-			// Color Bars
-			const colors = ['#00FFFF', '#FF00FF', '#FFFF00', '#000000', '#808080', '#C0C0C0'];
-			const barSize = 5 * pxPerMm;
-			let bx = 12 * pxPerMm;
-			const by = 2.5 * pxPerMm;
-
-			colors.forEach(c => {
-				ctx.fillStyle = c;
-				ctx.fillRect(bx, by, barSize, barSize);
-				bx += barSize;
-			});
-
-			__regMarkCanvas = canvas;
-			__regMarkLoading = false;
-			__regMarkError = false; // Clear error to show fallback
-			if(window.drawSheetOverlays) window.drawSheetOverlays();
-		});
-	});
-}
-
 // Draw sheet-level overlays (like Color Bars)
 window.drawSheetOverlays = function() {
 	document.querySelectorAll('.sheet-overlay-layer').forEach(e => e.remove());
@@ -410,25 +256,44 @@ window.drawSheetOverlays = function() {
 		Object.assign(layer.style, { position:'absolute', top:'0', left:'0', width:'100%', height:'100%', pointerEvents:'none', zIndex:'10000' });
 
 		window.__overlays.forEach(ov => {
+			if (ov.visible === false) return;
 			if (ov.type === 'colorbar') {
 				const cellSize = (parseFloat(ov.cellSize) || 5) * pxPerMm;
 				const x = (parseFloat(ov.x) || 0) * pxPerMm;
 				const y = (parseFloat(ov.y) || 0) * pxPerMm;
+				const limitVal = (parseFloat(ov.limit) || 0) * pxPerMm;
 				const isVert = !!ov.vertical;
-				const colors = ['cyan', 'magenta', 'yellow', 'black'];
+				const isRepeat = !!ov.repeat;
+				const hasRegBorder = !!ov.regBorder;
+				const colors = ['#00FFFF', '#FF00FF', '#FFFF00', '#000000', '#808080', '#C0C0C0'];
+				
+				const sheetLimit = isVert ? sheet.clientHeight : sheet.clientWidth;
+				const startPos = isVert ? y : x;
+				const endPos = (limitVal > 0) ? (startPos + limitVal) : sheetLimit;
+				let i = 0;
+				const epsilon = 0.01;
 
-				colors.forEach((c, i) => {
+				while (true) {
+					const currentPos = startPos + i * cellSize;
+					if (currentPos >= endPos - epsilon) break;
+					if (!isRepeat && i >= colors.length) break;
+					
+					const c = colors[i % colors.length];
 					const div = document.createElement('div');
-					Object.assign(div.style, { position:'absolute', width:cellSize+'px', height:cellSize+'px', backgroundColor:c });
+					Object.assign(div.style, { position:'absolute', width:cellSize+'px', height:cellSize+'px', backgroundColor:c, boxSizing: 'border-box' });
+					if (hasRegBorder) {
+						div.style.border = '0.25pt solid black';
+					}
 					if (isVert) {
 						div.style.left = x + 'px';
-						div.style.top = (y + (i * cellSize)) + 'px';
+						div.style.top = currentPos + 'px';
 					} else {
-						div.style.left = (x + (i * cellSize)) + 'px';
+						div.style.left = currentPos + 'px';
 						div.style.top = y + 'px';
 					}
 					layer.appendChild(div);
-				});
+					i++;
+				}
 			}
 			if (ov.type === 'duplex') {
 				const size = (parseFloat(ov.size) || 5) * pxPerMm;
@@ -479,47 +344,6 @@ window.drawSheetOverlays = function() {
 					layer.appendChild(bubble);
 				});
 			}
-			if (ov.type === 'regmark') {
-				const x = (parseFloat(ov.x) || 0) * pxPerMm;
-				const y = (parseFloat(ov.y) || 0) * pxPerMm;
-				const opacity = (ov.opacity !== undefined) ? ov.opacity : 1;
-
-				const div = document.createElement('div');
-				Object.assign(div.style, {
-					position: 'absolute',
-					left: x + 'px',
-					top: y + 'px',
-					opacity: opacity,
-					pointerEvents: 'none'
-				});
-
-				if (__regMarkCanvas) {
-					// Clone the cached canvas to avoid re-rendering
-					const clone = document.createElement('canvas');
-					clone.width = __regMarkCanvas.width;
-					clone.height = __regMarkCanvas.height;
-					clone.getContext('2d').drawImage(__regMarkCanvas, 0, 0);
-					
-					// Scale canvas to match CSS pixels (96 DPI)
-					if (__regMarkCanvas.dataset.pointWidth) {
-						const ptW = parseFloat(__regMarkCanvas.dataset.pointWidth);
-						const ptH = parseFloat(__regMarkCanvas.dataset.pointHeight);
-						clone.style.width = (ptW * (96/72)) + 'px';
-						clone.style.height = (ptH * (96/72)) + 'px';
-					}
-					div.appendChild(clone);
-				} else {
-					div.style.fontSize = "10px";
-					div.style.color = "red";
-					if (__regMarkError) {
-						div.textContent = "Error loading mark";
-					} else {
-						div.textContent = "Loading Reg Mark...";
-						loadRegMarkPreview();
-					}
-				}
-				layer.appendChild(div);
-			}
 		});
 		sheet.appendChild(layer);
 	});
@@ -529,49 +353,54 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 	if(!window.__overlays) return;
 	const { cmyk } = pdfLib;
 	const pageH = newPage.getHeight();
-
-	// Cache for embedded reg mark in this PDF document
-	if (!newPage.doc.__regMarkEmbedded) {
-		// Check if we need it
-		if (window.__overlays.some(ov => ov.type === 'regmark')) {
-			try {
-				const url = 'assets/reg_color_bars.pdf';
-				const res = await fetch(url);
-				if (!res.ok) throw new Error(res.statusText);
-				const existingPdfBytes = await res.arrayBuffer();
-				const srcDoc = await pdfLib.PDFDocument.load(existingPdfBytes);
-				const [embeddedPage] = await newPage.doc.embedPages(srcDoc.getPages(), [0]); // Embed 1st page
-				newPage.doc.__regMarkEmbedded = embeddedPage;
-			} catch (e) {
-				console.error("Could not embed reg mark PDF", e);
-				// Mark as failed to prevent retries
-				newPage.doc.__regMarkEmbedded = 'failed';
-			}
-		}
-	}
+	const mmToPt = 72 / 25.4;
 
 	window.__overlays.forEach(ov => {
+		if (ov.visible === false) return;
 		if (ov.type === 'colorbar') {
-			const cellSize = (parseFloat(ov.cellSize) || 5) * pxToPt;
-			const x = (parseFloat(ov.x) || 0) * pxToPt;
-			const yRaw = (parseFloat(ov.y) || 0) * pxToPt;
+			const cellSize = (parseFloat(ov.cellSize) || 5) * mmToPt;
+			const x = (parseFloat(ov.x) || 0) * mmToPt;
+			const yRaw = (parseFloat(ov.y) || 0) * mmToPt;
+			const limitVal = (parseFloat(ov.limit) || 0) * mmToPt;
 			const isVert = !!ov.vertical;
-			const colors = [[1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1]];
+			const isRepeat = !!ov.repeat;
+			const hasRegBorder = !!ov.regBorder;
+			const colors = [
+				[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], 
+				[0, 0, 0, 1], [0, 0, 0, 0.5], [0, 0, 0, 0.25]
+			];
+			
+			const pageW = newPage.getWidth();
+			const pageLimit = isVert ? pageH : pageW;
+			const startPos = isVert ? yRaw : x;
+			const endPos = (limitVal > 0) ? (startPos + limitVal) : pageLimit;
+			let i = 0;
+			const epsilon = 0.01;
 
-			colors.forEach((c, i) => {
+			while (true) {
+				const currentPos = startPos + i * cellSize;
+				if (currentPos >= endPos - epsilon) break;
+				if (!isRepeat && i >= colors.length) break;
+
+				const c = colors[i % colors.length];
 				let drawX, drawY;
 				if (isVert) {
 					drawX = x;
-					drawY = pageH - (yRaw + (i * cellSize)) - cellSize;
+					drawY = pageH - currentPos - cellSize;
 				} else {
-					drawX = x + (i * cellSize);
+					drawX = currentPos;
 					drawY = pageH - yRaw - cellSize;
 				}
-				newPage.drawRectangle({ x: drawX, y: drawY, width: cellSize, height: cellSize, color: cmyk(...c) });
-			});
+				const rectOptions = { x: drawX, y: drawY, width: cellSize, height: cellSize, color: cmyk(...c) };
+				if (hasRegBorder) {
+					rectOptions.borderColor = cmyk(1, 1, 1, 1);
+					rectOptions.borderWidth = 0.25;
+				}
+				newPage.drawRectangle(rectOptions);
+				i++;
+			}
 		}
 		if (ov.type === 'duplex') {
-			const mmToPt = 72 / 25.4;
 			const size = (parseFloat(ov.size) || 5) * mmToPt;
 			const thick = (parseFloat(ov.thickness) || 0.2) * mmToPt;
 			const marginX = (parseFloat(ov.x) || 0) * mmToPt;
@@ -586,7 +415,7 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 				{ x: pageW - marginX, y: marginY }
 			];
 
-			const color = cmyk(0,0,0,1);
+			const color = cmyk(1,1,1,1);
 			const isFront = (sheetIndex % 2 === 0);
 			const bubbleDiamMm = isFront ? 1.5 : 3;
 			const bubbleRadiusPt = (bubbleDiamMm / 2) * mmToPt;
@@ -600,52 +429,6 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 					newPage.drawCircle({ x: pos.x, y: pos.y, size: bubbleRadiusPt, borderColor: color, borderWidth: thick });
 				}
 			});
-		}
-		if (ov.type === 'regmark') {
-			const mmToPt = 72 / 25.4;
-			const x = (parseFloat(ov.x) || 0) * mmToPt;
-			const yRaw = (parseFloat(ov.y) || 0) * mmToPt;
-			// PDF coords (0,0) is bottom-left. yRaw is from top.
-			const y = pageH - yRaw; 
-			const opacity = (ov.opacity !== undefined) ? ov.opacity : 1;
-
-			if (newPage.doc.__regMarkEmbedded && newPage.doc.__regMarkEmbedded !== 'failed') {
-				const embedded = newPage.doc.__regMarkEmbedded;
-				// Draw with top-left corner at (x, y)
-				// drawPage draws from bottom-left of the image.
-				// So we need to subtract height from y.
-				newPage.drawPage(embedded, {
-					x: x,
-					y: y - embedded.height,
-					width: embedded.width,
-					height: embedded.height,
-					opacity: opacity
-				});
-			} else {
-				// Fallback drawing using pdf-lib primitives
-				const mm = 72 / 25.4;
-				const cx = x + (5 * mm);
-				const cy = y - (5 * mm);
-				const r = 3 * mm;
-				const regColor = cmyk(1, 1, 1, 1); // Registration color
-				
-				newPage.drawCircle({ x: cx, y: cy, size: r, borderWidth: 0.25, borderColor: regColor, opacity: opacity });
-				newPage.drawLine({ start: { x: cx - r - 2, y: cy }, end: { x: cx + r + 2, y: cy }, thickness: 0.25, color: regColor, opacity: opacity });
-				newPage.drawLine({ start: { x: cx, y: cy - r - 2 }, end: { x: cx, y: cy + r + 2 }, thickness: 0.25, color: regColor, opacity: opacity });
-
-				const colors = [
-					cmyk(1, 0, 0, 0), cmyk(0, 1, 0, 0), cmyk(0, 0, 1, 0), 
-					cmyk(0, 0, 0, 1), cmyk(0, 0, 0, 0.5), cmyk(0, 0, 0, 0.25)
-				];
-				const barSize = 5 * mm;
-				let bx = x + (12 * mm);
-				const by = y - (2.5 * mm) - barSize;
-
-				colors.forEach(c => {
-					newPage.drawRectangle({ x: bx, y: by, width: barSize, height: barSize, color: c, opacity: opacity });
-					bx += barSize;
-				});
-			}
 		}
 	});
 };

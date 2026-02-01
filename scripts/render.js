@@ -591,6 +591,12 @@
 			window.__skewY = 0;
 			window.__previewProfileFilter = '';
 			window.__fitToPage = true;
+			if(window.__overlays){
+				window.__overlays.forEach(ov => {
+					if(ov.type !== 'duplex' && ov.type !== 'colorbar') ov.visible = false;
+				});
+				if(window.renderOverlayInputs) window.renderOverlayInputs();
+			}
 			const iccSelect = document.getElementById('iccProfileSelect');
 			if(iccSelect){
 				iccSelect.value = '';

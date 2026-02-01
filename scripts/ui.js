@@ -627,25 +627,96 @@
 		addDuplexBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">center_focus_strong</span> Add Duplex Mark';
 		ltContentData.appendChild(addDuplexBtn);
 
-		const addRegMarkBtn = document.createElement('button');
-		addRegMarkBtn.className = 'toolbox-btn';
-		addRegMarkBtn.style.width = 'auto';
-		addRegMarkBtn.style.marginBottom = '10px';
-		addRegMarkBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">wysiwyg</span> Add Registration Mark';
-		ltContentData.appendChild(addRegMarkBtn);
-
 		const overlaysContainer = document.createElement('div');
 		overlaysContainer.style.display = 'flex';
 		overlaysContainer.style.flexDirection = 'column';
 		overlaysContainer.style.gap = '10px';
 		ltContentData.appendChild(overlaysContainer);
 
-		const renderOverlayInputs = () => {
+		const saveOverlays = () => {
+			if(window.__saveSettingsEnabled){
+				localStorage.setItem('pdf_overlays', JSON.stringify(window.__overlays));
+			}
+		};
+
+		if(window.__saveSettingsEnabled){
+			try {
+				const saved = localStorage.getItem('pdf_overlays');
+				if(saved) {
+					window.__overlays = JSON.parse(saved);
+					window.__overlays.forEach(ov => {
+						if(ov.type !== 'duplex' && ov.type !== 'colorbar') ov.visible = false;
+					});
+					setTimeout(() => {
+						if(window.drawSheetOverlays) window.drawSheetOverlays();
+						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+					}, 500);
+				}
+			} catch(e) { console.warn(e); }
+		}
+
+		const renderOverlayInputs = window.renderOverlayInputs = () => {
 			overlaysContainer.innerHTML = '';
 			if(!window.__overlays) window.__overlays = [];
 			
+			const activeOverlays = [];
+			const savedOverlays = [];
+
+			window.__overlays.forEach((ov, i) => {
+				if(!ov.name) {
+					let typeName = 'Overlay';
+					if(ov.type === 'numbering') typeName = 'Numbering';
+					else if(ov.type === 'colorbar') typeName = 'Color Bar';
+					else if(ov.type === 'duplex') typeName = 'Duplex';
+					else if(ov.type === 'regmark') typeName = 'Reg. Mark';
+					ov.name = `${typeName} ${i + 1}`;
+				}
+				if(ov.saved) {
+					ov.visible = false;
+					savedOverlays.push({ov, i});
+				} else {
+					activeOverlays.push({ov, i});
+				}
+			});
+
+			if(savedOverlays.length > 0){
+				const savedRow = document.createElement('div');
+				Object.assign(savedRow.style, { marginBottom:'10px', padding:'4px', background:'#222', border:'1px solid #444', borderRadius:'4px', display:'flex', alignItems:'center', gap:'5px' });
+				
+				const select = document.createElement('select');
+				select.className = 'toolbox-input';
+				select.style.flex = '1';
+				
+				const defOpt = document.createElement('option');
+				defOpt.textContent = `Saved Cards (${savedOverlays.length})`;
+				defOpt.value = -1;
+				select.appendChild(defOpt);
+				
+				savedOverlays.forEach(({ov, i}) => {
+					const opt = document.createElement('option');
+					opt.value = i;
+					opt.textContent = ov.name;
+					select.appendChild(opt);
+				});
+				
+				select.onchange = (e) => {
+					const idx = parseInt(e.target.value);
+					if(idx !== -1) {
+						window.__overlays[idx].saved = false;
+						window.__overlays[idx].visible = true;
+						saveOverlays();
+						renderOverlayInputs();
+						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+						if(window.drawSheetOverlays) window.drawSheetOverlays();
+					}
+				};
+				
+				savedRow.appendChild(select);
+				overlaysContainer.appendChild(savedRow);
+			}
+
 			// Render in reverse order so top layer is at the top of the list
-			const listItems = window.__overlays.map((ov, i) => ({ov, i})).reverse();
+			const listItems = activeOverlays.reverse();
 
 			listItems.forEach(({ov: overlay, i: index}) => {
 				const row = document.createElement('div');
@@ -689,6 +760,7 @@
 					const item = window.__overlays.splice(fromIndex, 1)[0];
 					if (fromIndex < toIndex) toIndex--;
 					window.__overlays.splice(toIndex, 0, item);
+					saveOverlays();
 					renderOverlayInputs();
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 				});
@@ -697,21 +769,132 @@
 				topRow.style.display = 'flex';
 				topRow.style.justifyContent = 'space-between';
 				topRow.style.alignItems = 'center';
-				topRow.style.marginBottom = '8px';
-				topRow.style.cursor = 'grab';
-				topRow.onmousedown = (e) => {
-					if(e.target.closest('button')) return;
-					row.draggable = true;
-				};
-				topRow.onmouseup = () => {
-					row.draggable = false;
-				};
+				topRow.style.marginBottom = '4px';
+
+				const titleContainer = document.createElement('div');
+				titleContainer.style.display = 'flex';
+				titleContainer.style.alignItems = 'center';
+				titleContainer.style.flex = '1';
+				titleContainer.style.overflow = 'hidden';
+				titleContainer.style.marginRight = '8px';
+
+				const titleText = document.createElement('span');
+				titleText.textContent = overlay.name;
+				Object.assign(titleText.style, { fontWeight:'bold', color:'#ddd', cursor:'grab', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginRight:'4px', flex:'1' });
+				titleText.onmousedown = (e) => { row.draggable = true; };
+				titleText.onmouseup = () => { row.draggable = false; };
+
+				const titleInput = document.createElement('input');
+				titleInput.type = 'text';
+				titleInput.value = overlay.name;
+				titleInput.className = 'toolbox-input';
+				Object.assign(titleInput.style, { display:'none', width:'100%', fontWeight:'bold', background:'transparent', border:'1px solid #555', color:'#ddd' });
 				
-				const title = document.createElement('span');
-				title.textContent = overlay.type === 'numbering' ? `Numbering ${index + 1}` : `Overlay ${index + 1}`;
-				title.style.fontSize = '11px';
-				title.style.fontWeight = 'bold';
-				title.style.color = '#ddd';
+				const editBtn = document.createElement('button');
+				editBtn.className = 'toolbox-btn';
+				Object.assign(editBtn.style, { width:'16px', height:'16px', padding:'0', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', opacity:'0.7', cursor:'pointer' });
+				editBtn.innerHTML = '<span class="material-icons" style="font-size:12px">edit</span>';
+				
+				const toggleEdit = () => {
+					if(titleInput.style.display === 'none'){
+						titleText.style.display = 'none';
+						editBtn.style.display = 'none';
+						titleInput.style.display = 'block';
+						titleInput.focus();
+					} else {
+						titleText.style.display = 'block';
+						editBtn.style.display = 'flex';
+						titleInput.style.display = 'none';
+						if(titleInput.value !== overlay.name){
+							overlay.name = titleInput.value;
+							titleText.textContent = overlay.name;
+							saveOverlays();
+						}
+					}
+				};
+
+				editBtn.onclick = toggleEdit;
+				titleText.ondblclick = toggleEdit;
+
+				titleInput.onblur = toggleEdit;
+				titleInput.onkeydown = (e) => { if(e.key === 'Enter') titleInput.blur(); };
+				titleInput.onmousedown = (e) => e.stopPropagation();
+
+				titleContainer.appendChild(titleText);
+				titleContainer.appendChild(titleInput);
+				titleContainer.appendChild(editBtn);
+
+				const controlsDiv = document.createElement('div');
+				controlsDiv.style.display = 'flex';
+				controlsDiv.style.gap = '8px';
+				controlsDiv.style.alignItems = 'center';
+				controlsDiv.style.marginBottom = '8px';
+
+				const mkCb = (lbl, prop) => {
+					const l = document.createElement('label');
+					l.style.fontSize = '9px';
+					l.style.color = '#aaa';
+					l.style.display = 'flex';
+					l.style.alignItems = 'center';
+					l.style.gap = '2px';
+					l.style.cursor = 'pointer';
+					const cb = document.createElement('input');
+					cb.type = 'checkbox';
+					cb.checked = overlay[prop] !== false;
+					cb.onchange = (e) => {
+						overlay[prop] = e.target.checked;
+						saveOverlays();
+						if(prop === 'visible'){
+							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+							if(window.drawSheetOverlays) window.drawSheetOverlays();
+						}
+					};
+					l.appendChild(cb);
+					l.appendChild(document.createTextNode(lbl));
+					return l;
+				};
+
+				controlsDiv.appendChild(mkCb('Show', 'visible'));
+
+				const actionsDiv = document.createElement('div');
+				actionsDiv.style.display = 'flex';
+				actionsDiv.style.gap = '4px';
+				actionsDiv.style.alignItems = 'center';
+
+				const stashBtn = document.createElement('button');
+				stashBtn.className = 'toolbox-btn';
+				Object.assign(stashBtn.style, { width:'20px', height:'20px', padding:'0', display:'flex', alignItems:'center', justifyContent:'center' });
+				stashBtn.innerHTML = '<span class="material-icons" style="font-size:14px">archive</span>';
+				stashBtn.title = 'Save for later';
+				stashBtn.onclick = () => {
+					overlay.saved = true;
+					overlay.visible = false;
+					saveOverlays();
+					renderOverlayInputs();
+					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+					if(window.drawSheetOverlays) window.drawSheetOverlays();
+				};
+				actionsDiv.appendChild(stashBtn);
+
+				const duplicateBtn = document.createElement('button');
+				duplicateBtn.className = 'toolbox-btn';
+				duplicateBtn.style.width = '20px';
+				duplicateBtn.style.height = '20px';
+				duplicateBtn.style.padding = '0';
+				duplicateBtn.style.display = 'flex';
+				duplicateBtn.style.alignItems = 'center';
+				duplicateBtn.style.justifyContent = 'center';
+				duplicateBtn.innerHTML = '<span class="material-icons" style="font-size:14px">content_copy</span>';
+				duplicateBtn.title = 'Duplicate Overlay';
+				duplicateBtn.onclick = () => {
+					const newOverlay = JSON.parse(JSON.stringify(overlay));
+					window.__overlays.splice(index + 1, 0, newOverlay);
+					saveOverlays();
+					renderOverlayInputs();
+					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+					if(window.drawSheetOverlays) window.drawSheetOverlays();
+				};
+				actionsDiv.appendChild(duplicateBtn);
 
 				const removeBtn = document.createElement('button');
 				removeBtn.className = 'toolbox-btn';
@@ -725,14 +908,17 @@
 				removeBtn.title = 'Remove Overlay';
 				removeBtn.onclick = () => {
 					window.__overlays.splice(index, 1);
+					saveOverlays();
 					renderOverlayInputs();
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					if(window.drawSheetOverlays) window.drawSheetOverlays();
 				};
+				actionsDiv.appendChild(removeBtn);
 
-				topRow.appendChild(title);
-				topRow.appendChild(removeBtn);
+				topRow.appendChild(titleContainer);
+				topRow.appendChild(actionsDiv);
 				row.appendChild(topRow);
+				row.appendChild(controlsDiv);
 
 				// Inputs helper
 				const createInput = (label, key, val) => {
@@ -755,6 +941,7 @@
 					inp.step = '1';
 					inp.oninput = (e) => {
 						overlay[key] = parseFloat(e.target.value) || 0;
+						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 					// Handle step with shift key
@@ -785,6 +972,7 @@
 					inp.value = val || '';
 					inp.oninput = (e) => {
 						overlay[key] = e.target.value;
+						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 					
@@ -838,6 +1026,7 @@
 
 						const update = (val) => {
 							ov.cmyk[i] = val / 100;
+							saveOverlays();
 							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 						};
 
@@ -887,6 +1076,7 @@
 					sl.style.height = '16px';
 					sl.oninput = (e) => {
 						ov.opacity = parseInt(e.target.value) / 100;
+						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 					
@@ -896,12 +1086,13 @@
 				};
 
 				const createFacingInput = (ov) => {
-					const facingWrap = document.createElement('div');
+					const facingWrap = document.createElement('label');
 					facingWrap.style.display = 'flex';
 					facingWrap.style.alignItems = 'center';
 					facingWrap.style.marginBottom = '4px';
+					facingWrap.style.cursor = 'pointer';
 					
-					const facingLbl = document.createElement('label');
+					const facingLbl = document.createElement('span');
 					facingLbl.textContent = 'Facing Pages';
 					facingLbl.style.fontSize = '10px';
 					facingLbl.style.color = '#aaa';
@@ -912,6 +1103,7 @@
 					facingCheck.checked = !!ov.facingPages;
 					facingCheck.onchange = (e) => {
 						ov.facingPages = e.target.checked;
+						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 					
@@ -1014,6 +1206,7 @@
 							}
 						}
 						overlay.font = res;
+						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 
@@ -1040,6 +1233,7 @@
 						const w = createInput(lbl, k, v);
 						w.querySelector('input').oninput = (e) => {
 							overlay[k] = parseFloat(e.target.value) || 0;
+							saveOverlays();
 							if(window.drawSheetOverlays) window.drawSheetOverlays();
 						};
 						return w;
@@ -1047,12 +1241,14 @@
 					row.appendChild(mkInp('Cell Size', 'cellSize', overlay.cellSize));
 					row.appendChild(mkInp('Pos X', 'x', overlay.x));
 					row.appendChild(mkInp('Pos Y', 'y', overlay.y));
+					row.appendChild(mkInp('Length', 'limit', overlay.limit));
 					
-					const vertWrap = document.createElement('div');
+					const vertWrap = document.createElement('label');
 					vertWrap.style.display = 'flex';
 					vertWrap.style.alignItems = 'center';
 					vertWrap.style.marginBottom = '4px';
-					const vertLbl = document.createElement('label');
+					vertWrap.style.cursor = 'pointer';
+					const vertLbl = document.createElement('span');
 					vertLbl.textContent = 'Vertical';
 					vertLbl.style.width = '50px';
 					vertLbl.style.fontSize = '10px';
@@ -1060,15 +1256,52 @@
 					const vertCheck = document.createElement('input');
 					vertCheck.type = 'checkbox';
 					vertCheck.checked = !!overlay.vertical;
-					vertCheck.onchange = (e) => { overlay.vertical = e.target.checked; if(window.drawSheetOverlays) window.drawSheetOverlays(); };
+					vertCheck.onchange = (e) => { overlay.vertical = e.target.checked; saveOverlays(); if(window.drawSheetOverlays) window.drawSheetOverlays(); };
 					vertWrap.appendChild(vertLbl);
 					vertWrap.appendChild(vertCheck);
 					row.appendChild(vertWrap);
+
+					const repWrap = document.createElement('label');
+					repWrap.style.display = 'flex';
+					repWrap.style.alignItems = 'center';
+					repWrap.style.marginBottom = '4px';
+					repWrap.style.cursor = 'pointer';
+					const repLbl = document.createElement('span');
+					repLbl.textContent = 'Repeat';
+					repLbl.style.width = '50px';
+					repLbl.style.fontSize = '10px';
+					repLbl.style.color = '#aaa';
+					const repCheck = document.createElement('input');
+					repCheck.type = 'checkbox';
+					repCheck.checked = !!overlay.repeat;
+					repCheck.onchange = (e) => { overlay.repeat = e.target.checked; saveOverlays(); if(window.drawSheetOverlays) window.drawSheetOverlays(); };
+					repWrap.appendChild(repLbl);
+					repWrap.appendChild(repCheck);
+					row.appendChild(repWrap);
+
+					const regWrap = document.createElement('label');
+					regWrap.style.display = 'flex';
+					regWrap.style.alignItems = 'center';
+					regWrap.style.marginBottom = '4px';
+					regWrap.style.cursor = 'pointer';
+					const regLbl = document.createElement('span');
+					regLbl.textContent = 'Reg. Border';
+					regLbl.style.width = '50px';
+					regLbl.style.fontSize = '10px';
+					regLbl.style.color = '#aaa';
+					const regCheck = document.createElement('input');
+					regCheck.type = 'checkbox';
+					regCheck.checked = !!overlay.regBorder;
+					regCheck.onchange = (e) => { overlay.regBorder = e.target.checked; saveOverlays(); if(window.drawSheetOverlays) window.drawSheetOverlays(); };
+					regWrap.appendChild(regLbl);
+					regWrap.appendChild(regCheck);
+					row.appendChild(regWrap);
 				} else if (overlay.type === 'duplex') {
 					const mkInp = (lbl, k, v) => {
 						const w = createInput(lbl, k, v);
 						w.querySelector('input').oninput = (e) => {
 							overlay[k] = parseFloat(e.target.value) || 0;
+							saveOverlays();
 							if(window.drawSheetOverlays) window.drawSheetOverlays();
 						};
 						return w;
@@ -1077,11 +1310,6 @@
 					row.appendChild(mkInp('Thickness', 'thickness', overlay.thickness));
 					row.appendChild(mkInp('Pos X', 'x', overlay.x));
 					row.appendChild(mkInp('Pos Y', 'y', overlay.y));
-
-				} else if (overlay.type === 'regmark') {
-					row.appendChild(createInput('Pos X', 'x', overlay.x));
-					row.appendChild(createInput('Pos Y', 'y', overlay.y));
-					row.appendChild(createOpacityInput(overlay));
 
 				} else {
 					// Square Overlay
@@ -1101,6 +1329,7 @@
 		addBtn.onclick = () => {
 			if(!window.__overlays) window.__overlays = [];
 			window.__overlays.push({ width: 12, height: 12, x: 0, y: 0, cmyk: [0.5, 0, 0.5, 0], opacity: 0.5 });
+			saveOverlays();
 			renderOverlayInputs();
 			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 		};
@@ -1113,13 +1342,15 @@
 				newOverlay = Object.assign({}, existing);
 			}
 			window.__overlays.push(newOverlay);
+			saveOverlays();
 			renderOverlayInputs();
 			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 		};
 
 		addColorBarBtn.onclick = () => {
 			if(!window.__overlays) window.__overlays = [];
-			window.__overlays.push({ type: 'colorbar', cellSize: 5, x: 5, y: 50, vertical: true });
+			window.__overlays.push({ type: 'colorbar', cellSize: 5, x: 5, y: 10, vertical: true });
+			saveOverlays();
 			renderOverlayInputs();
 			if(window.drawSheetOverlays) window.drawSheetOverlays();
 		};
@@ -1127,17 +1358,11 @@
 		addDuplexBtn.onclick = () => {
 			if(!window.__overlays) window.__overlays = [];
 			window.__overlays.push({ type: 'duplex', size: 5, thickness: 0.2, x: 10, y: 10 });
+			saveOverlays();
 			renderOverlayInputs();
 			if(window.drawSheetOverlays) window.drawSheetOverlays();
 		};
 
-		addRegMarkBtn.onclick = () => {
-			if(!window.__overlays) window.__overlays = [];
-			window.__overlays.push({ type: 'regmark', x: 0, y: 0, opacity: 1 });
-			renderOverlayInputs();
-			if(window.drawSheetOverlays) window.drawSheetOverlays();
-		};
-		
 		// Initial render
 		renderOverlayInputs();
 	}
@@ -2321,6 +2546,7 @@
 			const isVisible = toolbarOverflowDropdown.style.display === 'flex';
 			toolbarOverflowDropdown.style.display = isVisible ? 'none' : 'flex';
 		});
+		toolbarOverflowDropdown.addEventListener('click', (e) => e.stopPropagation());
 		document.addEventListener('click', () => { toolbarOverflowDropdown.style.display = 'none'; });
 	}
 
@@ -2461,6 +2687,42 @@
 	const toolboxes = document.querySelectorAll('.toolbox');
 	const leftToolbox = toolboxes[0];
 	const rightToolbox = toolboxes[1];
+
+	const addCloseButton = (toolbox, side) => {
+		if(!toolbox) return;
+		const btn = document.createElement('button');
+		btn.innerHTML = '<span class="material-icons">close</span>';
+		Object.assign(btn.style, {
+			position: 'absolute',
+			top: '8px',
+			right: '8px',
+			background: 'rgba(0,0,0,0.6)',
+			borderRadius: '50%',
+			width: '24px',
+			height: '24px',
+			display: 'flex',
+			alignItems: 'center',
+			justifyContent: 'center',
+			border: 'none',
+			color: '#fff',
+			cursor: 'pointer',
+			zIndex: '1000',
+			padding: '0'
+		});
+		btn.querySelector('span').style.fontSize = '16px';
+		const updateVisibility = () => { btn.style.display = (window.innerWidth <= 1000) ? 'flex' : 'none'; };
+		window.addEventListener('resize', updateVisibility);
+		updateVisibility();
+		btn.addEventListener('click', () => {
+			toolbox.classList.remove('visible');
+			if(side === 'left') document.body.classList.remove('left-toolbox-visible');
+			if(side === 'right') document.body.classList.remove('right-toolbox-visible');
+		});
+		if(window.getComputedStyle(toolbox).position === 'static') toolbox.style.position = 'relative';
+		toolbox.appendChild(btn);
+	};
+	addCloseButton(leftToolbox, 'left');
+	addCloseButton(rightToolbox, 'right');
 
 	if(toggleLeftBtn && leftToolbox){
 		toggleLeftBtn.addEventListener('click', () => {
