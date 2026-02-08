@@ -83,6 +83,10 @@
 	window.__frameBgString = 'transparent';
 	window.__selectionMode = false;
 	window.__selectionType = 'row'; // 'row' or 'col'
+	window.__gridDuplexMirror = false;
+	window.__mergeData = null;
+	window.__mergeConfig = {};
+	window.__mergeSource = { mode: 'all', page: 1 };
 	window.__pdfDoc = null;
 	window.__lastObjectURL = null;
 	// Prefer upscaling to the viewport instead of rotating the canvas for 90/270°
@@ -100,4 +104,27 @@
 	window.__pdfConfig = {
 		src: 'libs/pdf.min.js',
 		workerSrc: 'libs/pdf.worker.min.js'
+	};
+
+	// Helper to create consistent toolbox buttons
+	window.createToolboxBtn = function(icon, text, onClick, title) {
+		const btn = document.createElement('button');
+		btn.className = 'toolbox-btn';
+		btn.style.display = 'flex';
+		btn.style.alignItems = 'center';
+		btn.style.justifyContent = 'center';
+		btn.style.gap = '4px';
+		let html = '';
+		if (icon) html += `<span class="material-icons" style="vertical-align:middle; font-size:16px">${icon}</span>`;
+		if (text) html += text;
+		btn.innerHTML = html;
+		if (onClick) btn.onclick = onClick;
+		if (title) btn.title = title;
+		return btn;
+	};
+	window.createDeleteBtn = function(onClick, title = "Delete") {
+		const btn = window.createToolboxBtn('delete', null, onClick, title);
+		btn.style.width = '30px';
+		btn.style.padding = '0';
+		return btn;
 	};

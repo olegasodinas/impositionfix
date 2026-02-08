@@ -168,7 +168,12 @@
 	const layoutFieldIds = [
 		'rowsInput', 'colsInput', 'markGapXInput', 'markGapYInput',
 		'cropBleedXInput', 'cropBleedYInput', 'innerCropBleedXInput', 'innerCropBleedYInput',
-		'innerCropStyleSelect', 'boxXInput', 'boxYInput', 'paperSelect', 'pageRangeInput'
+		'innerCropStyleSelect', 'boxXInput', 'boxYInput', 'paperSelect', 'pageRangeInput',
+		'autoGridCheck', 'showCropMarksCheck', 'gridDuplexCheck',
+		'slotWidthInput', 'slotHeightInput', 'slotScalePercentInput', 'slotProportionalCheckbox', 'linkSlotScaleCheckbox', 'expandLeftInput', 'expandRightInput', 'expandTopInput', 'expandBottomInput',
+		'sheetWidthInput', 'sheetHeightInput',
+		'rotationInput', 'scaleSlider', 'skewXInput', 'skewYInput', 'offsetXInput', 'offsetYInput',
+		'fitImageBtn', 'fillImageBtn', 'stretchImageBtn', 'mergeSourceSelect', 'mergePageNumInput'
 	];
 
 	const defaultLayout = {
@@ -179,25 +184,71 @@
 		innerMarkStyle: 'solid',
 		boxX: 0, boxY: 0,
 		paper: '320,450',
-		range: '1-'
+		range: '1-',
+		fitToPage: true,
+		slotProportional: true
 	};
 
-	const getLayoutSettings = () => {
-		return {
-			rows: document.getElementById('rowsInput')?.value || 1,
-			cols: document.getElementById('colsInput')?.value || 1,
-			gapX: document.getElementById('markGapXInput')?.value || 0,
-			gapY: document.getElementById('markGapYInput')?.value || 0,
-			bleedX: document.getElementById('cropBleedXInput')?.value || 0,
-			bleedY: document.getElementById('cropBleedYInput')?.value || 0,
-			innerBleedX: document.getElementById('innerCropBleedXInput')?.value || 0,
-			innerBleedY: document.getElementById('innerCropBleedYInput')?.value || 0,
-			innerMarkStyle: document.getElementById('innerCropStyleSelect')?.value || 'solid',
-			boxX: document.getElementById('boxXInput')?.value || 0,
-			boxY: document.getElementById('boxYInput')?.value || 0,
-			paper: document.getElementById('paperSelect')?.value || '320,450',
-			range: document.getElementById('pageRangeInput')?.value || ''
-		};
+	const getLayoutSettings = (options = { grid:true, sheet:true, placement:true, range:true, transform:true, data:true }) => {
+		const s = {};
+		
+		if(options.grid){
+			s.rows = document.getElementById('rowsInput')?.value || 1;
+			s.cols = document.getElementById('colsInput')?.value || 1;
+			s.autoGrid = document.getElementById('autoGridCheck')?.checked;
+			s.gapX = document.getElementById('markGapXInput')?.value || 0;
+			s.gapY = document.getElementById('markGapYInput')?.value || 0;
+			s.bleedX = document.getElementById('cropBleedXInput')?.value || 0;
+			s.bleedY = document.getElementById('cropBleedYInput')?.value || 0;
+			s.innerBleedX = document.getElementById('innerCropBleedXInput')?.value || 0;
+			s.innerBleedY = document.getElementById('innerCropBleedYInput')?.value || 0;
+			s.innerMarkStyle = document.getElementById('innerCropStyleSelect')?.value || 'solid';
+			s.showCropMarks = document.getElementById('showCropMarksCheck')?.checked;
+		}
+
+		if(options.sheet){
+			s.paper = document.getElementById('paperSelect')?.value || '320,450';
+			s.sheetW = document.getElementById('sheetWidthInput')?.value;
+			s.sheetH = document.getElementById('sheetHeightInput')?.value;
+		}
+
+		if(options.placement){
+			s.boxX = document.getElementById('boxXInput')?.value || 0;
+			s.boxY = document.getElementById('boxYInput')?.value || 0;
+			s.duplexMirror = document.getElementById('gridDuplexCheck')?.checked;
+			s.slotW = document.getElementById('slotWidthInput')?.value || '';
+			s.slotH = document.getElementById('slotHeightInput')?.value || '';
+			s.expandL = document.getElementById('expandLeftInput')?.value || 0;
+			s.expandR = document.getElementById('expandRightInput')?.value || 0;
+			s.expandT = document.getElementById('expandTopInput')?.value || 0;
+			s.expandB = document.getElementById('expandBottomInput')?.value || 0;
+			s.fitToPage = document.getElementById('linkSlotScaleCheckbox')?.checked;
+			s.slotProportional = document.getElementById('slotProportionalCheckbox')?.checked;
+		}
+
+		if(options.range){
+			s.range = document.getElementById('pageRangeInput')?.value || '';
+		}
+		
+		if(options.transform){
+			s.rotation = window.__currentRotation || 0;
+			s.scaleX = window.__currentScaleX || 1;
+			s.scaleY = window.__currentScaleY || 1;
+			s.skewX = window.__skewX || 0;
+			s.skewY = window.__skewY || 0;
+			s.offsetX = window.__offsetX || 0;
+			s.offsetY = window.__offsetY || 0;
+			s.fitMode = window.__preferUpscaleNotRotate ? 'fit' : (window.__fillImage ? 'fill' : (window.__stretchImage ? 'stretch' : null));
+		}
+
+		if(options.data){
+			s.overlays = window.__overlays || [];
+			s.mergeConfig = window.__mergeConfig || {};
+			s.mergeSourceMode = document.getElementById('mergeSourceSelect')?.value || 'all';
+			s.mergeSourcePage = parseInt(document.getElementById('mergePageNumInput')?.value) || 1;
+		}
+
+		return s;
 	};
 
 	const flashLayoutFields = () => {
@@ -214,32 +265,87 @@
 		if(!settings) return;
 		const setVal = (id, val) => {
 			const el = document.getElementById(id);
-			if(el) {
+			if(el && val !== undefined) {
 				el.value = val;
 				el.dispatchEvent(new Event('input'));
 				el.dispatchEvent(new Event('change'));
 			}
 		};
+		const setCheck = (id, val) => {
+			const el = document.getElementById(id);
+			if(el && val !== undefined) {
+				el.checked = val;
+				el.dispatchEvent(new Event('change'));
+			}
+		};
 		
-		// Paper first to set sheet size
-		const paperEl = document.getElementById('paperSelect');
-		if(paperEl && settings.paper){
-			paperEl.value = settings.paper;
-			paperEl.dispatchEvent(new Event('change'));
+		if(settings.paper){
+			const paperEl = document.getElementById('paperSelect');
+			if(paperEl){
+				paperEl.value = settings.paper;
+				paperEl.dispatchEvent(new Event('change'));
+			}
 		}
+		if(settings.sheetW) setVal('sheetWidthInput', settings.sheetW);
+		if(settings.sheetH) setVal('sheetHeightInput', settings.sheetH);
 
 		setVal('rowsInput', settings.rows);
 		setVal('colsInput', settings.cols);
+		setCheck('autoGridCheck', settings.autoGrid);
 		setVal('markGapXInput', settings.gapX);
 		setVal('markGapYInput', settings.gapY);
 		setVal('cropBleedXInput', settings.bleedX);
 		setVal('cropBleedYInput', settings.bleedY);
-		setVal('innerCropBleedXInput', settings.innerBleedX !== undefined ? settings.innerBleedX : settings.bleedX);
-		setVal('innerCropBleedYInput', settings.innerBleedY !== undefined ? settings.innerBleedY : settings.bleedY);
-		setVal('innerCropStyleSelect', settings.innerMarkStyle || 'solid');
+		setVal('innerCropBleedXInput', settings.innerBleedX);
+		setVal('innerCropBleedYInput', settings.innerBleedY);
+		setVal('innerCropStyleSelect', settings.innerMarkStyle);
+		setCheck('showCropMarksCheck', settings.showCropMarks);
+
 		setVal('boxXInput', settings.boxX);
 		setVal('boxYInput', settings.boxY);
+		setCheck('gridDuplexCheck', settings.duplexMirror);
+		
+		setVal('slotWidthInput', settings.slotW);
+		setVal('slotHeightInput', settings.slotH);
+		setVal('expandLeftInput', settings.expandL);
+		setVal('expandRightInput', settings.expandR);
+		setVal('expandTopInput', settings.expandT);
+		setVal('expandBottomInput', settings.expandB);
+		if(settings.fitToPage !== undefined) setCheck('linkSlotScaleCheckbox', settings.fitToPage);
+		if(settings.slotProportional !== undefined) setCheck('slotProportionalCheckbox', settings.slotProportional);
+
 		setVal('pageRangeInput', settings.range);
+
+		// Transform
+		if(settings.rotation !== undefined) setVal('rotationInput', settings.rotation);
+		if(settings.scaleX !== undefined) setVal('scaleSlider', Math.round(settings.scaleX * 100));
+		// Handle non-uniform scale if needed (slider only does uniform)
+		if(settings.scaleX !== undefined && settings.scaleY !== undefined && settings.scaleX !== settings.scaleY){
+			window.adjustContentScale(settings.scaleX, settings.scaleY);
+		}
+		if(settings.skewX !== undefined) setVal('skewXInput', settings.skewX);
+		if(settings.skewY !== undefined) setVal('skewYInput', settings.skewY);
+		
+		const pxPerMm = 96 / 25.4;
+		if(settings.offsetX !== undefined) setVal('offsetXInput', (settings.offsetX / pxPerMm).toFixed(2));
+		if(settings.offsetY !== undefined) setVal('offsetYInput', (settings.offsetY / pxPerMm).toFixed(2));
+
+		if(settings.fitMode === 'fit') document.getElementById('fitImageBtn')?.click();
+		else if(settings.fitMode === 'fill') document.getElementById('fillImageBtn')?.click();
+		else if(settings.fitMode === 'stretch') document.getElementById('stretchImageBtn')?.click();
+
+		// Data
+		if(settings.overlays){
+			window.__overlays = JSON.parse(JSON.stringify(settings.overlays));
+			if(window.renderOverlayInputs) window.renderOverlayInputs();
+		}
+		if(settings.mergeConfig){
+			window.__mergeConfig = JSON.parse(JSON.stringify(settings.mergeConfig));
+			if(window.renderDataMergeCards) window.renderDataMergeCards();
+		}
+		if(settings.mergeSourceMode) setVal('mergeSourceSelect', settings.mergeSourceMode);
+		if(settings.mergeSourcePage) setVal('mergePageNumInput', settings.mergeSourcePage);
+
 		flashLayoutFields();
 	};
 
@@ -289,14 +395,84 @@
 
 	if(saveLayoutBtn){
 		saveLayoutBtn.addEventListener('click', () => {
-			const name = prompt('Layout Name:');
-			if(!name) return;
-			const layouts = JSON.parse(localStorage.getItem('pdf_layouts') || '{}');
-			layouts[name] = getLayoutSettings();
-			localStorage.setItem('pdf_layouts', JSON.stringify(layouts));
-			loadLayouts();
-			layoutSelect.value = name;
-			localStorage.setItem('pdf_last_layout', name);
+			// Create Dialog
+			const dialog = document.createElement('div');
+			Object.assign(dialog.style, {
+				position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+				backgroundColor: 'rgba(0,0,0,0.5)', zIndex: '3000', display: 'flex',
+				alignItems: 'center', justifyContent: 'center'
+			});
+
+			const content = document.createElement('div');
+			Object.assign(content.style, {
+				backgroundColor: '#222', padding: '20px', borderRadius: '8px',
+				border: '1px solid #444', width: '300px', color: '#eee',
+				boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+			});
+
+			content.innerHTML = `
+				<h3 style="margin-top:0; margin-bottom:15px; border-bottom:1px solid #444; padding-bottom:10px">Save Layout</h3>
+				<div style="margin-bottom:15px">
+					<label style="display:block; font-size:11px; color:#aaa; margin-bottom:4px">Layout Name</label>
+					<input type="text" id="saveLayoutName" class="toolbox-input" style="width:100%" placeholder="My Layout">
+				</div>
+				<div style="margin-bottom:10px; font-size:12px">
+					<div style="margin-bottom:5px; font-weight:bold; color:#ccc">Include:</div>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="saveGrid" checked> Grid & Marks
+					</label>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="saveSheet" checked> Sheet Format
+					</label>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="savePlacement" checked> Content Placement
+					</label>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="saveRange" checked> Page Range
+					</label>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="saveTransform" checked> Transformations
+					</label>
+					<label style="display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer">
+						<input type="checkbox" id="saveData" checked> Data & Overlays
+					</label>
+				</div>
+				<div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px">
+					<button id="cancelSaveLayout" class="toolbox-btn" style="width:auto; padding:6px 12px">Cancel</button>
+					<button id="confirmSaveLayout" class="toolbox-btn" style="width:auto; padding:6px 12px; background-color:#00bcd4; color:#000; font-weight:bold">Save</button>
+				</div>
+			`;
+
+			dialog.appendChild(content);
+			document.body.appendChild(dialog);
+
+			const nameInput = document.getElementById('saveLayoutName');
+			nameInput.focus();
+
+			document.getElementById('cancelSaveLayout').onclick = () => document.body.removeChild(dialog);
+
+			document.getElementById('confirmSaveLayout').onclick = () => {
+				const name = nameInput.value.trim();
+				if(!name) { alert('Please enter a layout name.'); return; }
+
+				const options = {
+					grid: document.getElementById('saveGrid').checked,
+					sheet: document.getElementById('saveSheet').checked,
+					placement: document.getElementById('savePlacement').checked,
+					range: document.getElementById('saveRange').checked,
+					transform: document.getElementById('saveTransform').checked,
+					data: document.getElementById('saveData').checked
+				};
+
+				const layouts = JSON.parse(localStorage.getItem('pdf_layouts') || '{}');
+				layouts[name] = getLayoutSettings(options);
+				localStorage.setItem('pdf_layouts', JSON.stringify(layouts));
+				loadLayouts();
+				layoutSelect.value = name;
+				localStorage.setItem('pdf_last_layout', name);
+				
+				document.body.removeChild(dialog);
+			};
 		});
 	}
 
@@ -435,7 +611,208 @@
 
 	// wire UI: page range input
 	if(pageRangeInput){
+		const suggestionContainer = document.createElement('div');
+		suggestionContainer.id = 'nupSuggestions';
+		suggestionContainer.style.marginTop = '4px';
+		suggestionContainer.style.display = 'flex';
+		suggestionContainer.style.flexWrap = 'wrap';
+		suggestionContainer.style.gap = '4px';
+		pageRangeInput.parentNode.insertBefore(suggestionContainer, pageRangeInput.nextSibling);
+
+		const calculateSignatureVariations = (totalPages, maxSigSize) => {
+			if (totalPages <= 0 || maxSigSize < 4) return [];
+			const variations = [];
+
+			const formatGroups = (groups) => {
+				const merged = [];
+				if(groups.length > 0){
+					let current = { ...groups[0] };
+					for(let i=1; i<groups.length; i++){
+						const g = groups[i];
+						if(g.size === current.size && g.start === current.end + 1){
+							current.end = g.end;
+						} else {
+							merged.push(current);
+							current = { ...g };
+						}
+					}
+					merged.push(current);
+				}
+				return merged.map(g => `${g.size}-up(${g.start}-${g.end})`).join(' ');
+			};
+
+			const addVariation = (label, groups, type) => {
+				const value = formatGroups(groups);
+				if (!variations.some(v => v.value === value)) {
+					variations.push({ label, value, type });
+				}
+			};
+
+			// 1. Standard Layout (Greedy)
+			const stdNumFull = Math.floor(totalPages / maxSigSize);
+			const stdRemainder = totalPages % maxSigSize;
+			const stdLastSize = Math.ceil(stdRemainder / 4) * 4;
+			
+			const stdGroups = [];
+			let currentPage = 1;
+			for(let i=0; i<stdNumFull; i++){
+				stdGroups.push({ size: maxSigSize, start: currentPage, end: currentPage + maxSigSize - 1 });
+				currentPage += maxSigSize;
+			}
+			if (stdLastSize > 0) {
+				stdGroups.push({ size: stdLastSize, start: currentPage, end: currentPage + stdLastSize - 1 });
+			}
+			
+			let stdLabelParts = [];
+			if (stdNumFull > 0) stdLabelParts.push(`${stdNumFull}x${maxSigSize}-up`);
+			if (stdLastSize > 0) stdLabelParts.push(`1x${stdLastSize}-up`);
+			
+			if(stdLabelParts.length > 0) {
+				addVariation(stdLabelParts.join(' + '), stdGroups, 'Standard');
+			}
+
+			// 2. Balanced Layout
+			const numSigs = Math.ceil(totalPages / maxSigSize);
+			if (numSigs > 1) {
+				const baseSize = Math.floor(totalPages / numSigs / 4) * 4;
+				if (baseSize > 0) {
+					const remainder = totalPages - (baseSize * numSigs);
+					const numBig = Math.ceil(remainder / 4);
+					const numSmall = numSigs - numBig;
+					const bigSize = baseSize + 4;
+					const smallSize = baseSize;
+					
+					if (bigSize <= maxSigSize && numSmall > 0) {
+						const groups = [];
+						let cp = 1;
+						for(let i=0; i<numBig; i++){
+							groups.push({ size: bigSize, start: cp, end: cp + bigSize - 1 });
+							cp += bigSize;
+						}
+						for(let i=0; i<numSmall; i++){
+							groups.push({ size: smallSize, start: cp, end: cp + smallSize - 1 });
+							cp += smallSize;
+						}
+						const label = `${numBig}x${bigSize}-up + ${numSmall}x${smallSize}-up`;
+						addVariation(label, groups, 'Balanced');
+					}
+				}
+			}
+
+			// 3. Uniform Layout (Full signatures with blanks)
+			if (numSigs > 0) {
+				const uniformGroups = [];
+				let cp = 1;
+				for(let i=0; i<numSigs; i++){
+					uniformGroups.push({ size: maxSigSize, start: cp, end: cp + maxSigSize - 1 });
+					cp += maxSigSize;
+				}
+				addVariation(`${numSigs}x${maxSigSize}-up`, uniformGroups, 'Uniform');
+			}
+
+			return variations;
+		};
+
+		const updateSuggestions = () => {
+			suggestionContainer.innerHTML = '';
+			const val = pageRangeInput.value.trim();
+			
+			let n = 0;
+			const shorthandMatch = val.match(/^(\d+)-?up$/i);
+			if (shorthandMatch) {
+				n = parseInt(shorthandMatch[1], 10);
+			} else {
+				const matches = [...val.matchAll(/(\d+)-?up/gi)];
+				if (matches.length > 0) {
+					n = Math.max(...matches.map(m => parseInt(m[1], 10)));
+				}
+			}
+
+			const r = parseInt(rowsInput.value) || 1;
+			const c = parseInt(colsInput.value) || 1;
+			const isGridActive = r > 1 || c > 1;
+
+			if ((n > 0 || isGridActive) && window.__pdfDoc) {
+				const totalPages = window.__pdfDoc.numPages;
+				const vars = n > 0 ? calculateSignatureVariations(totalPages, n) : [];
+				
+				const infoDiv = document.createElement('div');
+				infoDiv.style.width = '100%';
+				infoDiv.style.fontSize = '11px';
+				infoDiv.style.marginBottom = '4px';
+				infoDiv.style.color = '#ccc';
+				
+				let activeVar = null;
+				if (n > 0) {
+					if (shorthandMatch) {
+						activeVar = vars.find(v => v.type === 'Standard');
+					} else {
+						const normVal = val.replace(/\s+/g, ' ').trim();
+						activeVar = vars.find(v => v.value === normVal);
+					}
+
+					if (activeVar) {
+						infoDiv.innerHTML = `Active: <strong style="color:#00bcd4">${activeVar.type}</strong> (${activeVar.label})`;
+					} else {
+						infoDiv.textContent = `Detected ${n}-up layout. Variations:`;
+					}
+				} else {
+					infoDiv.textContent = `Grid Layout: ${r}×${c}`;
+				}
+				suggestionContainer.appendChild(infoDiv);
+
+				const resetBtn = document.createElement('button');
+				resetBtn.textContent = 'Reset';
+				resetBtn.className = 'toolbox-btn';
+				resetBtn.style.width = 'auto';
+				resetBtn.style.fontSize = '10px';
+				resetBtn.style.padding = '2px 6px';
+				resetBtn.style.backgroundColor = '#d32f2f';
+				resetBtn.style.marginRight = '4px';
+				resetBtn.title = "Reset to default layout";
+				resetBtn.onclick = (e) => {
+					e.preventDefault();
+					const ls = document.getElementById('layoutSelect');
+					if(ls){
+						ls.value = 'Default';
+						if(window.applyCurrentLayout) window.applyCurrentLayout();
+					} else {
+						// Fallback if layout system missing
+						pageRangeInput.value = '1-';
+						if(rowsInput) rowsInput.value = 1;
+						if(colsInput) colsInput.value = 1;
+						pageRangeInput.dispatchEvent(new Event('input'));
+					}
+				};
+				suggestionContainer.appendChild(resetBtn);
+
+				vars.forEach(v => {
+					const btn = document.createElement('button');
+					btn.textContent = `${v.type}: ${v.label}`;
+					btn.className = 'toolbox-btn';
+					btn.style.width = 'auto';
+					btn.style.fontSize = '10px';
+					btn.style.padding = '2px 6px';
+					btn.title = v.value;
+					
+					if (activeVar && activeVar.value === v.value) {
+						btn.style.borderColor = '#00bcd4';
+						btn.style.color = '#00bcd4';
+						btn.style.opacity = '0.7';
+					}
+
+					btn.onclick = (e) => {
+						e.preventDefault();
+						pageRangeInput.value = v.value;
+						pageRangeInput.dispatchEvent(new Event('input'));
+					};
+					suggestionContainer.appendChild(btn);
+				});
+			}
+		};
+
 		pageRangeInput.addEventListener('input', ()=>{
+			updateSuggestions();
 			// Update grid (add/remove sheets) based on new page count
 			const r = parseInt(rowsInput.value) || 1;
 			const c = parseInt(colsInput.value) || 1;
@@ -479,6 +856,7 @@
 	const impEvenBtn = document.getElementById('impEvenBtn');
 	const impOddBtn = document.getElementById('impOddBtn');
 	const impBottomBtn = document.getElementById('impBottomBtn');
+	const impStackBtn = document.getElementById('impStackBtn');
 	const impBlankBtn = document.getElementById('impBlankBtn');
 
 	if(impNormalBtn) impNormalBtn.addEventListener('click', (e) => updateRange(e, '1-'));
@@ -492,6 +870,131 @@
 	if(impEvenBtn) impEvenBtn.addEventListener('click', (e) => updateRange(e, 'even(1-)'));
 	if(impOddBtn) impOddBtn.addEventListener('click', (e) => updateRange(e, 'odd(1-)'));
 	if(impBottomBtn) impBottomBtn.addEventListener('click', (e) => updateRange(e, 'b(1-)'));
+	if(impStackBtn) impStackBtn.addEventListener('click', () => {
+		const dialog = document.createElement('div');
+		Object.assign(dialog.style, {
+			position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+			backgroundColor: 'rgba(0,0,0,0.5)', zIndex: '3000', display: 'flex',
+			alignItems: 'center', justifyContent: 'center'
+		});
+
+		const content = document.createElement('div');
+		Object.assign(content.style, {
+			backgroundColor: '#222', padding: '20px', borderRadius: '8px',
+			border: '1px solid #444', width: '300px', color: '#eee',
+			boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+		});
+
+		const totalPages = window.__pdfDoc ? window.__pdfDoc.numPages : 0;
+		const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+		const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+		const fileCounts = window.__filePageCounts || [];
+		const isMultiFile = fileCounts.length > 1;
+
+		content.innerHTML = `
+			<h3 style="margin-top:0; margin-bottom:15px; border-bottom:1px solid #444; padding-bottom:10px">Cut & Stack</h3>
+			<div style="margin-bottom:10px">
+				<label style="display:block; font-size:11px; color:#aaa; margin-bottom:4px">Total Pages</label>
+				<input type="number" id="stackTotalPages" class="toolbox-input" style="width:100%" value="${totalPages}">
+			</div>
+			<div style="margin-bottom:10px">
+				<label style="display:block; font-size:11px; color:#aaa; margin-bottom:4px">Block Size (Pages per Stack)</label>
+				<input type="number" id="stackBlockSize" class="toolbox-input" style="width:100%" placeholder="Auto (All)">
+			</div>
+			${isMultiFile ? `<div style="margin-bottom:10px"><label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px"><input type="checkbox" id="stackPerFile" checked> Stack each file separately</label></div>` : ''}
+			<div style="margin-bottom:10px; display:flex; gap:10px">
+				<div style="flex:1">
+					<label style="display:block; font-size:11px; color:#aaa; margin-bottom:4px">Rows</label>
+					<input type="number" id="stackRows" class="toolbox-input" style="width:100%" value="${rows}" disabled>
+				</div>
+				<div style="flex:1">
+					<label style="display:block; font-size:11px; color:#aaa; margin-bottom:4px">Cols</label>
+					<input type="number" id="stackCols" class="toolbox-input" style="width:100%" value="${cols}" disabled>
+				</div>
+			</div>
+			<div style="margin-bottom:15px">
+				<label style="display:flex; align-items:center; gap:6px; cursor:pointer">
+					<input type="checkbox" id="stackDuplex" checked> Duplex (2-Sided)
+				</label>
+			</div>
+			<div style="display:flex; justify-content:flex-end; gap:10px">
+				<button id="stackCancel" class="toolbox-btn" style="width:auto; padding:6px 12px">Cancel</button>
+				<button id="stackApply" class="toolbox-btn" style="width:auto; padding:6px 12px; background-color:#00bcd4; color:#000; font-weight:bold">Apply</button>
+			</div>
+		`;
+
+		dialog.appendChild(content);
+		document.body.appendChild(dialog);
+
+		document.getElementById('stackCancel').onclick = () => document.body.removeChild(dialog);
+
+		document.getElementById('stackApply').onclick = () => {
+			const p = parseInt(document.getElementById('stackTotalPages').value) || 0;
+			const bSize = parseInt(document.getElementById('stackBlockSize').value) || 0;
+			const r = parseInt(document.getElementById('stackRows').value) || 1;
+			const c = parseInt(document.getElementById('stackCols').value) || 1;
+			const duplex = document.getElementById('stackDuplex').checked;
+			const perFile = isMultiFile && document.getElementById('stackPerFile')?.checked;
+			const slots = r * c;
+
+			const generateStack = (count, offset) => {
+				const effectiveBlockSize = bSize > 0 ? bSize : Math.ceil(count / slots);
+				const sheetsPerBlock = duplex ? Math.ceil(effectiveBlockSize / 2) : effectiveBlockSize;
+				const pagesPerBlockSet = slots * effectiveBlockSize;
+
+				const res = [];
+				let processed = 0;
+
+				while(processed < count){
+					for(let s=0; s<sheetsPerBlock; s++){
+						for(let k=0; k<slots; k++){
+							if(duplex){
+								const p1Rel = k * effectiveBlockSize + (s * 2) + 1;
+								const p2Rel = k * effectiveBlockSize + (s * 2) + 2;
+								const p1 = processed + p1Rel;
+								const p2 = processed + p2Rel;
+								res.push(p1 <= count ? p1 + offset : 0);
+								res.push(p2 <= count ? p2 + offset : 0);
+							} else {
+								const pRel = k * effectiveBlockSize + s + 1;
+								const pg = processed + pRel;
+								res.push(pg <= count ? pg + offset : 0);
+							}
+						}
+					}
+					processed += pagesPerBlockSet;
+				}
+				return res;
+			};
+
+			let result = [];
+			if(perFile){
+				let offset = 0;
+				for(const count of fileCounts){
+					result = result.concat(generateStack(count, offset));
+					offset += count;
+				}
+			} else {
+				result = generateStack(p, 0);
+			}
+
+			const rangeStr = window.pagesToRangeString ? window.pagesToRangeString(result) : result.join(' ');
+			if(duplex) setRange(`2sided(${rangeStr})`);
+			else setRange(rangeStr);
+
+			document.body.removeChild(dialog);
+		};
+
+		if(isMultiFile){
+			const pf = document.getElementById('stackPerFile');
+			const tp = document.getElementById('stackTotalPages');
+			pf.onchange = () => {
+				tp.disabled = pf.checked;
+				if(pf.checked) tp.value = totalPages;
+			};
+			pf.dispatchEvent(new Event('change'));
+		}
+	});
 	if(impBlankBtn) impBlankBtn.addEventListener('click', (e) => updateRange(e, '0', true));
 
 	const clearPageRangeBtn = document.getElementById('clearPageRangeBtn');
@@ -595,37 +1098,376 @@
 
 		// Initialize Data Tab UI
 		ltContentData.innerHTML = '';
+
+		// --- Data Merge Section ---
+		const mergeHeader = document.createElement('h3');
+		mergeHeader.textContent = 'Data Merge';
+		ltContentData.appendChild(mergeHeader);
+
+		const mergeContainer = document.createElement('div');
+		mergeContainer.className = 'toolbox-row';
+		mergeContainer.style.marginBottom = '15px';
+		mergeContainer.style.borderBottom = '1px solid #444';
+		mergeContainer.style.paddingBottom = '10px';
+
+		const fileRow = document.createElement('div');
+		fileRow.style.display = 'flex';
+		fileRow.style.gap = '5px';
+		fileRow.style.alignItems = 'center';
+
+		const dataFileInput = document.createElement('input');
+		dataFileInput.type = 'file';
+		dataFileInput.accept = '.csv,.xls,.xlsx';
+		dataFileInput.style.display = 'none';
+		dataFileInput.id = 'dataMergeInput';
+
+		const dataFileBtn = document.createElement('label');
+		dataFileBtn.className = 'toolbox-btn';
+		dataFileBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">upload_file</span> Load Data File';
+		dataFileBtn.htmlFor = 'dataMergeInput';
+		dataFileBtn.style.flex = '1';
+		dataFileBtn.style.textAlign = 'center';
+		dataFileBtn.style.cursor = 'pointer';
+		dataFileBtn.title = "Supports CSV, XLS, XLSX";
+
+		const clearDataBtn = window.createDeleteBtn(() => {
+			window.__mergeData = null;
+			const info = document.getElementById('dataMergeInfo');
+			if(info) info.textContent = 'No data loaded';
+			dataFileInput.value = '';
+			renderDataMergeCards();
+		}, "Clear Data");
+
+		fileRow.appendChild(dataFileInput);
+		fileRow.appendChild(dataFileBtn);
+		fileRow.appendChild(clearDataBtn);
+		mergeContainer.appendChild(fileRow);
+
+		const dataFileInfo = document.createElement('div');
+		dataFileInfo.id = 'dataMergeInfo';
+		dataFileInfo.style.fontSize = '10px';
+		dataFileInfo.style.color = '#aaa';
+		dataFileInfo.style.marginTop = '4px';
+		dataFileInfo.textContent = 'No data loaded';
+		mergeContainer.appendChild(dataFileInfo);
+
+		// Source Page Selection
+		const sourceRow = document.createElement('div');
+		sourceRow.style.display = 'flex';
+		sourceRow.style.gap = '5px';
+		sourceRow.style.marginTop = '8px';
+		sourceRow.style.alignItems = 'center';
+
+		const sourceLabel = document.createElement('label');
+		sourceLabel.textContent = 'Background:';
+		sourceLabel.style.fontSize = '10px';
+		sourceLabel.style.color = '#aaa';
+
+		const sourceSelect = document.createElement('select');
+		sourceSelect.className = 'toolbox-input';
+		sourceSelect.id = 'mergeSourceSelect';
+		sourceSelect.style.flex = '1';
+		const optAll = document.createElement('option');
+		optAll.value = 'all';
+		optAll.textContent = 'Sequence (Default)';
+		const optSingle = document.createElement('option');
+		optSingle.value = 'single';
+		optSingle.textContent = 'Repeat Page';
+		sourceSelect.appendChild(optAll);
+		sourceSelect.appendChild(optSingle);
+
+		const pageNumInput = document.createElement('input');
+		pageNumInput.type = 'number';
+		pageNumInput.id = 'mergePageNumInput';
+		pageNumInput.className = 'toolbox-input';
+		pageNumInput.style.width = '40px';
+		pageNumInput.value = '1';
+		pageNumInput.min = '1';
+		pageNumInput.style.display = 'none';
+
+		sourceRow.appendChild(sourceLabel);
+		sourceRow.appendChild(sourceSelect);
+		sourceRow.appendChild(pageNumInput);
+		mergeContainer.appendChild(sourceRow);
+
+		ltContentData.appendChild(mergeContainer);
+		
+		const dataFieldsContainer = document.createElement('div');
+		dataFieldsContainer.id = 'dataFieldsContainer';
+		ltContentData.appendChild(dataFieldsContainer);
+
+		dataFileInput.addEventListener('change', async (e) => {
+			const file = e.target.files[0];
+			if (!file) return;
+			
+			dataFileInfo.textContent = `Loading ${file.name}...`;
+
+			try {
+				if (file.name.match(/\.csv$/i) || file.type === 'text/csv') {
+					const text = await file.text();
+					// Simple CSV parser
+					const parseCSV = (str) => {
+						const arr = [];
+						let quote = false;
+						let col = 0, row = 0;
+						for (let c = 0; c < str.length; c++) {
+							let cc = str[c], nc = str[c+1];
+							arr[row] = arr[row] || [];
+							arr[row][col] = arr[row][col] || '';
+							if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; }
+							else if (cc == '"') { quote = !quote; }
+							else if (cc == ',' && !quote) { ++col; }
+							else if (cc == '\r' && nc == '\n' && !quote) { ++row; col = 0; ++c; }
+							else if (cc == '\n' && !quote) { ++row; col = 0; }
+							else if (cc == '\r' && !quote) { ++row; col = 0; }
+							else { arr[row][col] += cc; }
+						}
+						return arr;
+					};
+					
+					const rows = parseCSV(text);
+					if (rows.length > 0) {
+						window.__mergeData = {
+							headers: rows[0],
+							rows: rows.slice(1).filter(r => r.length > 0 && (r.length > 1 || r[0] !== ''))
+						};
+						dataFileInfo.textContent = `${file.name} (${window.__mergeData.rows.length} records)`;
+						renderDataMergeCards();
+					}
+				} else if (file.name.match(/\.xlsx?$/i)) {
+					if (typeof XLSX !== 'undefined') {
+						const data = await file.arrayBuffer();
+						const workbook = XLSX.read(data);
+						const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+						const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+						if (rows.length > 0) {
+							window.__mergeData = {
+								headers: rows[0],
+								rows: rows.slice(1)
+							};
+							dataFileInfo.textContent = `${file.name} (${window.__mergeData.rows.length} records)`;
+							renderDataMergeCards();
+						}
+					} else {
+						dataFileInfo.textContent = `Error: SheetJS library missing.`;
+						alert("To use XLS/XLSX files, please include the SheetJS (xlsx) library in your HTML.");
+					}
+				} else {
+					dataFileInfo.textContent = "Unsupported file type.";
+				}
+			} catch (err) {
+				console.error(err);
+				dataFileInfo.textContent = `Error loading ${file.name}`;
+			}
+		});
+
+		const updateMergeSettings = () => {
+			window.__mergeSource.mode = sourceSelect.value;
+			window.__mergeSource.page = parseInt(pageNumInput.value) || 1;
+			if (window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		sourceSelect.onchange = () => {
+			pageNumInput.style.display = sourceSelect.value === 'single' ? 'block' : 'none';
+			updateMergeSettings();
+		};
+		pageNumInput.oninput = () => {
+			updateMergeSettings();
+		};
+		
+		window.renderDataMergeCards = () => {
+			dataFieldsContainer.innerHTML = '';
+			if(!window.__mergeData || !window.__mergeData.headers) return;
+
+			window.__mergeData.headers.forEach((header, colIndex) => {
+				if(!header) return;
+
+				const recordCount = window.__mergeData.rows.filter(row => row && row[colIndex] && String(row[colIndex]).trim() !== '').length;
+				// Initialize config for this column if missing
+				if(!window.__mergeConfig[header]) {
+					window.__mergeConfig[header] = {
+						visible: false,
+						x: 10, y: 10 + (colIndex * 5),
+						styleId: null,
+						startPage: 1,
+						pageFilter: 'all'
+					};
+				}
+				const cfg = window.__mergeConfig[header];
+
+				const card = document.createElement('div');
+				Object.assign(card.style, {
+					background: '#333', border: '1px solid #444', borderRadius: '4px',
+					padding: '8px', marginBottom: '8px'
+				});
+
+				// Header Row
+				const headRow = document.createElement('div');
+				headRow.style.display = 'flex';
+				headRow.style.justifyContent = 'space-between';
+				headRow.style.alignItems = 'center';
+				headRow.style.marginBottom = '6px';
+
+				const title = document.createElement('span');
+				title.textContent = `${header} (${recordCount} items)`;
+				title.style.fontWeight = 'bold';
+				title.style.color = '#ddd';
+				title.style.fontSize = '11px';
+
+				const visLabel = document.createElement('label');
+				visLabel.style.fontSize = '10px';
+				visLabel.style.color = '#aaa';
+				visLabel.style.display = 'flex';
+				visLabel.style.alignItems = 'center';
+				visLabel.style.gap = '4px';
+				const visCheck = document.createElement('input');
+				visCheck.type = 'checkbox';
+				visCheck.checked = cfg.visible;
+				visCheck.onchange = (e) => {
+					cfg.visible = e.target.checked;
+					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+				};
+				visLabel.appendChild(visCheck);
+				visLabel.appendChild(document.createTextNode('Enable'));
+
+				headRow.appendChild(title);
+				headRow.appendChild(visLabel);
+				card.appendChild(headRow);
+
+				// Inputs Helper
+				const mkRow = () => { const d = document.createElement('div'); d.style.display='flex'; d.style.gap='5px'; d.style.marginBottom='4px'; return d; };
+				const mkInp = (lbl, key, type='number', step=1, width='auto') => {
+					const w = document.createElement('div');
+					w.style.flex = '1';
+					const l = document.createElement('label');
+					l.textContent = lbl;
+					l.style.display = 'block';
+					l.style.fontSize = '9px';
+					l.style.color = '#aaa';
+					const i = document.createElement('input');
+					i.type = type;
+					i.value = cfg[key];
+					if(type==='number') i.step = step;
+					i.className = 'toolbox-input';
+					i.style.width = '100%';
+					i.oninput = (e) => {
+						cfg[key] = (type==='number') ? parseFloat(e.target.value) : e.target.value;
+						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+					};
+					w.appendChild(l);
+					w.appendChild(i);
+					return w;
+				};
+
+				// Row 1: X, Y, Start Page
+				const r1 = mkRow();
+				r1.appendChild(mkInp('X (mm)', 'x', 'number', 1));
+				r1.appendChild(mkInp('Y (mm)', 'y', 'number', 1));
+				r1.appendChild(mkInp('Start Page', 'startPage', 'number', 1));
+				card.appendChild(r1);
+
+				// Row 2: Text Style
+				const r2 = mkRow();
+				const styleWrap = document.createElement('div');
+				styleWrap.style.flex = '1';
+				const sl = document.createElement('label');
+				sl.textContent = 'Text Style';
+				sl.style.display = 'block';
+				sl.style.fontSize = '9px';
+				sl.style.color = '#aaa';
+				const sSel = document.createElement('select');
+				sSel.className = 'toolbox-input';
+				sSel.style.width = '100%';
+
+				const styles = window.__textStyles || {};
+				const styleNames = Object.keys(styles);
+				
+				if (styleNames.length === 0) {
+					const o = document.createElement('option');
+					o.textContent = 'No styles defined';
+					sSel.disabled = true;
+					sSel.appendChild(o);
+				} else {
+					styleNames.forEach(name => {
+						const o = document.createElement('option');
+						o.value = name;
+						o.textContent = name;
+						sSel.appendChild(o);
+					});
+					if (!cfg.styleId || !styles[cfg.styleId]) cfg.styleId = styleNames[0];
+					sSel.value = cfg.styleId;
+				}
+				sSel.onchange = (e) => { cfg.styleId = e.target.value; if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0}); };
+				
+				styleWrap.appendChild(sl);
+				styleWrap.appendChild(sSel);
+				r2.appendChild(styleWrap);
+				card.appendChild(r2);
+
+				// Row 3: Page Filter
+				const r3 = mkRow();
+				const pageFilterWrap = document.createElement('div');
+				pageFilterWrap.style.flex = '1';
+				const pfl = document.createElement('label');
+				pfl.textContent = 'Show On';
+				pfl.style.display = 'block';
+				pfl.style.fontSize = '9px';
+				pfl.style.color = '#aaa';
+				const pfSel = document.createElement('select');
+				pfSel.className = 'toolbox-input';
+				['All Pages', 'Odd Pages', 'Even Pages'].forEach(f => {
+					const o = document.createElement('option');
+					const val = f.split(' ')[0].toLowerCase();
+					o.value = val; 
+					o.textContent = f;
+					pfSel.appendChild(o);
+				});
+				pfSel.value = cfg.pageFilter || 'all';
+				pfSel.onchange = (e) => { cfg.pageFilter = e.target.value; if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0}); };
+				pageFilterWrap.appendChild(pfl);
+				pageFilterWrap.appendChild(pfSel);
+				r3.appendChild(pageFilterWrap);
+				card.appendChild(r3);
+
+				dataFieldsContainer.appendChild(card);
+			});
+		};
+
 		const header = document.createElement('h3');
 		header.textContent = 'Data Overlays';
 		ltContentData.appendChild(header);
 
-		const addBtn = document.createElement('button');
-		addBtn.className = 'toolbox-btn';
+		const addBtn = window.createToolboxBtn('add', 'Add Square Overlay');
 		addBtn.style.width = 'auto';
 		addBtn.style.marginBottom = '10px';
-		addBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">add</span> Add Square Overlay';
 		ltContentData.appendChild(addBtn);
 
-		const addNumBtn = document.createElement('button');
-		addNumBtn.className = 'toolbox-btn';
+		const addNumBtn = window.createToolboxBtn('looks_one', 'Add Numbering');
 		addNumBtn.style.width = 'auto';
 		addNumBtn.style.marginBottom = '10px';
-		addNumBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">looks_one</span> Add Numbering';
 		ltContentData.appendChild(addNumBtn);
 
-		const addColorBarBtn = document.createElement('button');
-		addColorBarBtn.className = 'toolbox-btn';
+		const addFileNameBtn = window.createToolboxBtn('description', 'Add File Name');
+		addFileNameBtn.style.width = 'auto';
+		addFileNameBtn.style.marginBottom = '10px';
+		ltContentData.appendChild(addFileNameBtn);
+
+		const addColorBarBtn = window.createToolboxBtn('palette', 'Add Color Bar');
 		addColorBarBtn.style.width = 'auto';
 		addColorBarBtn.style.marginBottom = '10px';
-		addColorBarBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">palette</span> Add Color Bar';
 		ltContentData.appendChild(addColorBarBtn);
 
-		const addDuplexBtn = document.createElement('button');
-		addDuplexBtn.className = 'toolbox-btn';
+		const addDuplexBtn = window.createToolboxBtn('center_focus_strong', 'Add Duplex Mark');
 		addDuplexBtn.style.width = 'auto';
 		addDuplexBtn.style.marginBottom = '10px';
-		addDuplexBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">center_focus_strong</span> Add Duplex Mark';
 		ltContentData.appendChild(addDuplexBtn);
+
+		const addSigMarkBtn = window.createToolboxBtn('bookmark_border', 'Add Signature Mark');
+		addSigMarkBtn.style.width = 'auto';
+		addSigMarkBtn.style.marginBottom = '10px';
+		addSigMarkBtn.disabled = true;
+		addSigMarkBtn.style.opacity = '0.5';
+		ltContentData.appendChild(addSigMarkBtn);
 
 		const overlaysContainer = document.createElement('div');
 		overlaysContainer.style.display = 'flex';
@@ -645,7 +1487,7 @@
 				if(saved) {
 					window.__overlays = JSON.parse(saved);
 					window.__overlays.forEach(ov => {
-						if(ov.type !== 'duplex' && ov.type !== 'colorbar') ov.visible = false;
+						if(ov.type !== 'duplex' && ov.type !== 'colorbar' && ov.type !== 'filename') ov.visible = false;
 					});
 					setTimeout(() => {
 						if(window.drawSheetOverlays) window.drawSheetOverlays();
@@ -666,6 +1508,7 @@
 				if(!ov.name) {
 					let typeName = 'Overlay';
 					if(ov.type === 'numbering') typeName = 'Numbering';
+					else if(ov.type === 'filename') typeName = 'File Name';
 					else if(ov.type === 'colorbar') typeName = 'Color Bar';
 					else if(ov.type === 'duplex') typeName = 'Duplex';
 					else if(ov.type === 'regmark') typeName = 'Reg. Mark';
@@ -845,6 +1688,7 @@
 						overlay[prop] = e.target.checked;
 						saveOverlays();
 						if(prop === 'visible'){
+							renderOverlayInputs();
 							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 							if(window.drawSheetOverlays) window.drawSheetOverlays();
 						}
@@ -861,58 +1705,36 @@
 				actionsDiv.style.gap = '4px';
 				actionsDiv.style.alignItems = 'center';
 
-				const stashBtn = document.createElement('button');
-				stashBtn.className = 'toolbox-btn';
-				Object.assign(stashBtn.style, { width:'20px', height:'20px', padding:'0', display:'flex', alignItems:'center', justifyContent:'center' });
-				stashBtn.innerHTML = '<span class="material-icons" style="font-size:14px">archive</span>';
-				stashBtn.title = 'Save for later';
-				stashBtn.onclick = () => {
+				const stashBtn = window.createToolboxBtn('archive', null, () => {
 					overlay.saved = true;
 					overlay.visible = false;
 					saveOverlays();
 					renderOverlayInputs();
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					if(window.drawSheetOverlays) window.drawSheetOverlays();
-				};
+				}, 'Save for later');
+				Object.assign(stashBtn.style, { width:'20px', height:'20px', padding:'0' });
 				actionsDiv.appendChild(stashBtn);
 
-				const duplicateBtn = document.createElement('button');
-				duplicateBtn.className = 'toolbox-btn';
-				duplicateBtn.style.width = '20px';
-				duplicateBtn.style.height = '20px';
-				duplicateBtn.style.padding = '0';
-				duplicateBtn.style.display = 'flex';
-				duplicateBtn.style.alignItems = 'center';
-				duplicateBtn.style.justifyContent = 'center';
-				duplicateBtn.innerHTML = '<span class="material-icons" style="font-size:14px">content_copy</span>';
-				duplicateBtn.title = 'Duplicate Overlay';
-				duplicateBtn.onclick = () => {
+				const duplicateBtn = window.createToolboxBtn('content_copy', null, () => {
 					const newOverlay = JSON.parse(JSON.stringify(overlay));
 					window.__overlays.splice(index + 1, 0, newOverlay);
 					saveOverlays();
 					renderOverlayInputs();
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					if(window.drawSheetOverlays) window.drawSheetOverlays();
-				};
+				}, 'Duplicate Overlay');
+				Object.assign(duplicateBtn.style, { width:'20px', height:'20px', padding:'0' });
 				actionsDiv.appendChild(duplicateBtn);
 
-				const removeBtn = document.createElement('button');
-				removeBtn.className = 'toolbox-btn';
-				removeBtn.style.width = '20px';
-				removeBtn.style.height = '20px';
-				removeBtn.style.padding = '0';
-				removeBtn.style.display = 'flex';
-				removeBtn.style.alignItems = 'center';
-				removeBtn.style.justifyContent = 'center';
-				removeBtn.innerHTML = '<span class="material-icons" style="font-size:14px">close</span>';
-				removeBtn.title = 'Remove Overlay';
-				removeBtn.onclick = () => {
+				const removeBtn = window.createToolboxBtn('close', null, () => {
 					window.__overlays.splice(index, 1);
 					saveOverlays();
 					renderOverlayInputs();
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					if(window.drawSheetOverlays) window.drawSheetOverlays();
-				};
+				}, 'Remove Overlay');
+				Object.assign(removeBtn.style, { width:'20px', height:'20px', padding:'0' });
 				actionsDiv.appendChild(removeBtn);
 
 				topRow.appendChild(titleContainer);
@@ -1112,121 +1934,230 @@
 					return facingWrap;
 				};
 
-				if (overlay.type === 'numbering') {
-					// Font Selector
-					const fontWrap = document.createElement('div');
-					fontWrap.style.display = 'flex';
-					fontWrap.style.alignItems = 'center';
-					fontWrap.style.marginBottom = '4px';
-					fontWrap.style.gap = '5px';
-
-					const fontLbl = document.createElement('label');
-					fontLbl.textContent = 'Font';
-					fontLbl.style.width = '50px';
-					fontLbl.style.fontSize = '10px';
-					fontLbl.style.color = '#aaa';
-
-					const familySel = document.createElement('select');
-					familySel.className = 'toolbox-input';
-					familySel.style.flex = '1';
+				if (overlay.type === 'numbering' || overlay.type === 'filename') {
+					// Style Selector
+					const styleRow = document.createElement('div');
+					styleRow.style.display = 'flex';
+					styleRow.style.marginBottom = '4px';
+					styleRow.style.alignItems = 'center';
 					
+					const styleLbl = document.createElement('label');
+					styleLbl.textContent = 'Style';
+					styleLbl.style.width = '50px';
+					styleLbl.style.fontSize = '10px';
+					styleLbl.style.color = '#aaa';
+
 					const styleSel = document.createElement('select');
 					styleSel.className = 'toolbox-input';
 					styleSel.style.flex = '1';
 
-					const families = ['Helvetica', 'Times', 'Courier', 'Symbol', 'ZapfDingbats'];
-					const styles = ['Normal', 'Bold', 'Italic', 'Bold Italic'];
+					const styles = window.__textStyles || {};
+					const styleNames = Object.keys(styles);
 
-					families.forEach(f => {
+					if (styleNames.length === 0) {
 						const opt = document.createElement('option');
-						opt.value = f;
-						opt.textContent = f;
-						familySel.appendChild(opt);
-					});
-
-					styles.forEach(s => {
-						const opt = document.createElement('option');
-						opt.value = s;
-						opt.textContent = s;
+						opt.textContent = 'No styles defined';
+						styleSel.disabled = true;
 						styleSel.appendChild(opt);
-					});
-
-					// Determine current family/style
-					let currentFont = overlay.font || 'Helvetica';
-					let curFamily = 'Helvetica';
-					let curStyle = 'Normal';
-
-					if(currentFont.startsWith('Times')){
-						curFamily = 'Times';
-						if(currentFont.includes('BoldItalic')) curStyle = 'Bold Italic';
-						else if(currentFont.includes('Bold')) curStyle = 'Bold';
-						else if(currentFont.includes('Italic')) curStyle = 'Italic';
-					} else if(currentFont.startsWith('Courier')){
-						curFamily = 'Courier';
-						if(currentFont.includes('BoldOblique')) curStyle = 'Bold Italic';
-						else if(currentFont.includes('Bold')) curStyle = 'Bold';
-						else if(currentFont.includes('Oblique')) curStyle = 'Italic';
-					} else if(currentFont.startsWith('Helvetica')){
-						curFamily = 'Helvetica';
-						if(currentFont.includes('BoldOblique')) curStyle = 'Bold Italic';
-						else if(currentFont.includes('Bold')) curStyle = 'Bold';
-						else if(currentFont.includes('Oblique')) curStyle = 'Italic';
-					} else if(currentFont === 'Symbol'){
-						curFamily = 'Symbol';
-					} else if(currentFont === 'ZapfDingbats'){
-						curFamily = 'ZapfDingbats';
+					} else {
+						styleNames.forEach(name => {
+							const o = document.createElement('option');
+							o.value = name;
+							o.textContent = name;
+							styleSel.appendChild(o);
+						});
+						if (!overlay.styleId || !styles[overlay.styleId]) overlay.styleId = styleNames[0];
+						styleSel.value = overlay.styleId;
 					}
-
-					familySel.value = curFamily;
-					styleSel.value = curStyle;
-					if(curFamily === 'Symbol' || curFamily === 'ZapfDingbats') styleSel.disabled = true;
-
-					const updateFont = () => {
-						const f = familySel.value;
-						const s = styleSel.value;
-						let res = f;
-						
-						if(f === 'Symbol' || f === 'ZapfDingbats'){
-							styleSel.disabled = true;
-							res = f;
-						} else {
-							styleSel.disabled = false;
-							if(f === 'Times'){
-								if(s === 'Normal') res = 'Times-Roman';
-								else if(s === 'Bold') res = 'Times-Bold';
-								else if(s === 'Italic') res = 'Times-Italic';
-								else if(s === 'Bold Italic') res = 'Times-BoldItalic';
-							} else {
-								// Helvetica or Courier
-								res = f;
-								if(s === 'Normal') {}
-								else if(s === 'Bold') res += '-Bold';
-								else if(s === 'Italic') res += '-Oblique';
-								else if(s === 'Bold Italic') res += '-BoldOblique';
-							}
-						}
-						overlay.font = res;
+					styleSel.onchange = (e) => {
+						overlay.styleId = e.target.value;
 						saveOverlays();
 						if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 					};
 
-					familySel.onchange = updateFont;
-					styleSel.onchange = updateFont;
-
-					fontWrap.appendChild(fontLbl);
-					fontWrap.appendChild(familySel);
-					fontWrap.appendChild(styleSel);
-					row.appendChild(fontWrap);
+					styleRow.appendChild(styleLbl);
+					styleRow.appendChild(styleSel);
+					row.appendChild(styleRow);
 
 					row.appendChild(createFacingInput(overlay));
 
-					row.appendChild(createTextInput('Prefix', 'prefix', overlay.prefix));
-					row.appendChild(createInput('Digits', 'digits', overlay.digits));
-					row.appendChild(createTextInput('Pages', 'pageRange', overlay.pageRange));
-					row.appendChild(createInput('Size (pt)', 'fontSize', overlay.fontSize));
+					if (overlay.type === 'numbering') {
+						row.appendChild(createTextInput('Prefix', 'prefix', overlay.prefix));
+						row.appendChild(createInput('Digits', 'digits', overlay.digits));
+						const onPagesInput = createTextInput('On Pages', 'pageRange', overlay.pageRange);
+						row.appendChild(onPagesInput);
+						row.appendChild(createInput('Start', 'startFrom', (overlay.startFrom !== undefined) ? overlay.startFrom : 1));
+
+						const subRow = document.createElement('div');
+						Object.assign(subRow.style, { marginTop:'4px', padding:'4px', border:'1px solid #555', borderRadius:'4px', background:'#2a2a2a' });
+						
+						const cbLabel = document.createElement('label');
+						Object.assign(cbLabel.style, { display:'flex', alignItems:'center', fontSize:'10px', color:'#aaa', marginBottom:'4px', cursor:'pointer' });
+						const cb = document.createElement('input');
+						cb.type = 'checkbox';
+						cb.checked = !!overlay.useSpecificPages;
+						cb.onchange = (e) => {
+							overlay.useSpecificPages = e.target.checked;
+							saveOverlays();
+							renderOverlayInputs();
+							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+							onPagesInput.querySelector('input').disabled = overlay.useSpecificPages;
+						};
+						cbLabel.appendChild(cb);
+						cbLabel.appendChild(document.createTextNode(' Use Pages (Sequential)'));
+						subRow.appendChild(cbLabel);
+
+						const pInput = createTextInput('Seq. Pages', 'specificPages', overlay.specificPages);
+						pInput.querySelector('input').disabled = !overlay.useSpecificPages;
+						onPagesInput.querySelector('input').disabled = !!overlay.useSpecificPages;
+						subRow.appendChild(pInput);
+
+						const dInput = createInput('Duplicate', 'duplicateCount', overlay.duplicateCount);
+						dInput.querySelector('input').disabled = !overlay.useSpecificPages;
+						subRow.appendChild(dInput);
+
+						const createFilesBtn = window.createToolboxBtn('library_add', 'Create Files', async () => {
+							if (!window.PDFLib || !window.__lastObjectURL) return;
+							const pagesStr = overlay.specificPages;
+							const dupCount = parseInt(overlay.duplicateCount) || 1;
+							if (!pagesStr) return;
+							
+							const btnText = createFilesBtn.innerHTML;
+							createFilesBtn.innerHTML = 'Processing...';
+							createFilesBtn.disabled = true;
+
+							try {
+								const pages = window.parsePageOrder ? window.parsePageOrder(pagesStr) : [];
+								if (pages.length === 0) throw new Error("No pages selected");
+
+								const { PDFDocument } = window.PDFLib;
+								const pdfBytes = await fetch(window.__lastObjectURL).then(res => res.arrayBuffer());
+								const srcDoc = await PDFDocument.load(pdfBytes);
+								const newFiles = [];
+								for (const pageNum of pages) {
+									if (pageNum < 1 || pageNum > srcDoc.getPageCount()) continue;
+									const newDoc = await PDFDocument.create();
+									const [copiedPage] = await newDoc.copyPages(srcDoc, [pageNum - 1]);
+									for (let i = 0; i < dupCount; i++) newDoc.addPage(copiedPage);
+									const newBytes = await newDoc.save();
+									const blob = new Blob([newBytes], { type: 'application/pdf' });
+									newFiles.push(new File([blob], `Page_${pageNum}_x${dupCount}.pdf`, { type: 'application/pdf' }));
+								}
+								if (newFiles.length > 0) {
+									const oldFileCount = (window.__importedFiles || []).length;
+									if (window.__importedFiles) {
+										window.__importedFiles.forEach(f => f.hidden = true);
+									}
+									window.__importedFiles = (window.__importedFiles || []).concat(newFiles);
+									await window.openPdfFile(window.__importedFiles, true);
+									
+									overlay.useSpecificPages = false;
+									overlay.specificPages = "";
+									delete overlay._cachedRangeStr;
+									delete overlay._cachedPageList;
+									const startF = oldFileCount + 1;
+									const endF = oldFileCount + newFiles.length;
+									overlay.pageRange = (startF === endF) ? `f${startF}:1-` : `f${startF}-${endF}:1-`;
+									overlay.visible = true;
+									saveOverlays();
+									renderOverlayInputs();
+									if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+								}
+							} catch (e) { console.error(e); alert(e.message); } finally { createFilesBtn.innerHTML = btnText; createFilesBtn.disabled = false; }
+						}, 'Add these pages as new files to the list');
+						createFilesBtn.style.marginTop = '4px';
+						createFilesBtn.style.width = '100%';
+						createFilesBtn.style.fontSize = '10px';
+						createFilesBtn.disabled = !overlay.useSpecificPages;
+						subRow.appendChild(createFilesBtn);
+
+						row.appendChild(subRow);
+					} else {
+						// Filename specific inputs
+						const fileRow = document.createElement('div');
+						fileRow.style.display = 'flex';
+						fileRow.style.alignItems = 'center';
+						fileRow.style.marginBottom = '4px';
+						fileRow.style.gap = '5px';
+
+						const fileSel = document.createElement('select');
+						fileSel.className = 'toolbox-input';
+						fileSel.style.flex = '1';
+						
+						const files = window.__fileNames || [];
+						if(files.length === 0){
+							const o = document.createElement('option');
+							o.textContent = "No files";
+							fileSel.disabled = true;
+							fileSel.appendChild(o);
+						} else {
+							files.forEach((f, i) => {
+								const o = document.createElement('option');
+								o.value = i;
+								o.textContent = (i+1) + ': ' + f;
+								fileSel.appendChild(o);
+							});
+						}
+						
+						const allFilesLabel = document.createElement('label');
+						allFilesLabel.style.fontSize = '10px';
+						allFilesLabel.style.color = '#aaa';
+						allFilesLabel.style.display = 'flex';
+						allFilesLabel.style.alignItems = 'center';
+						allFilesLabel.style.gap = '4px';
+						allFilesLabel.style.cursor = 'pointer';
+						
+						const allFilesCheck = document.createElement('input');
+						allFilesCheck.type = 'checkbox';
+						allFilesCheck.checked = overlay.allFiles !== false;
+						
+						const updateFile = () => {
+							overlay.allFiles = allFilesCheck.checked;
+							fileSel.disabled = overlay.allFiles || files.length === 0;
+							if(!overlay.allFiles) overlay.fileIndex = parseInt(fileSel.value);
+							saveOverlays();
+							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+						};
+						
+						allFilesCheck.onchange = updateFile;
+						fileSel.onchange = updateFile;
+						
+						// Init state
+						fileSel.disabled = allFilesCheck.checked || files.length === 0;
+						if(overlay.fileIndex !== undefined) fileSel.value = overlay.fileIndex;
+
+						allFilesLabel.appendChild(allFilesCheck);
+						allFilesLabel.appendChild(document.createTextNode('All Files'));
+						
+						fileRow.appendChild(fileSel);
+						fileRow.appendChild(allFilesLabel);
+						row.appendChild(fileRow);
+
+						const extWrap = document.createElement('label');
+						extWrap.style.display = 'flex';
+						extWrap.style.alignItems = 'center';
+						extWrap.style.marginBottom = '4px';
+						extWrap.style.cursor = 'pointer';
+						const extLbl = document.createElement('span');
+						extLbl.textContent = 'Include Extension';
+						extLbl.style.fontSize = '10px';
+						extLbl.style.color = '#aaa';
+						extLbl.style.marginRight = '5px';
+						const extCheck = document.createElement('input');
+						extCheck.type = 'checkbox';
+						extCheck.checked = overlay.includeExtension !== false;
+						extCheck.onchange = (e) => {
+							overlay.includeExtension = e.target.checked;
+							saveOverlays();
+							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+						};
+						extWrap.appendChild(extCheck);
+						extWrap.appendChild(extLbl);
+						row.appendChild(extWrap);
+					}
+
 					row.appendChild(createInput('Pos X', 'x', overlay.x));
 					row.appendChild(createInput('Pos Y', 'y', overlay.y));
-					row.appendChild(createCmykInput(overlay));
 
 				} else if (overlay.type === 'colorbar') {
 					const mkInp = (lbl, k, v) => {
@@ -1311,6 +2242,23 @@
 					row.appendChild(mkInp('Pos X', 'x', overlay.x));
 					row.appendChild(mkInp('Pos Y', 'y', overlay.y));
 
+				} else if (overlay.type === 'sigmark') {
+					const mkInp = (lbl, k, v) => {
+						const w = createInput(lbl, k, v);
+						w.querySelector('input').oninput = (e) => {
+							overlay[k] = parseFloat(e.target.value) || 0;
+							saveOverlays();
+							if(window.drawSheetOverlays) window.drawSheetOverlays();
+						};
+						return w;
+					};
+					row.appendChild(mkInp('Width', 'width', overlay.width));
+					row.appendChild(mkInp('Height', 'height', overlay.height));
+					row.appendChild(mkInp('Step Y', 'step', overlay.step));
+					row.appendChild(mkInp('Offset X', 'x', overlay.x));
+					row.appendChild(mkInp('Offset Y', 'y', overlay.y));
+					row.appendChild(createCmykInput(overlay));
+					
 				} else {
 					// Square Overlay
 					row.appendChild(createInput('Width', 'width', overlay.width));
@@ -1336,12 +2284,20 @@
 
 		addNumBtn.onclick = () => {
 			if(!window.__overlays) window.__overlays = [];
-			let newOverlay = { type: 'numbering', fontSize: 12, x: 5, y: 5, font: 'Helvetica', cmyk: [0, 0, 0, 1] };
+			let newOverlay = { type: 'numbering', fontSize: 12, x: 5, y: 5, font: 'Helvetica', cmyk: [0, 0, 0, 1], startFrom: 1 };
 			const existing = window.__overlays.find(o => o.type === 'numbering');
 			if(existing){
 				newOverlay = Object.assign({}, existing);
 			}
 			window.__overlays.push(newOverlay);
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		addFileNameBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			window.__overlays.push({ type: 'filename', fontSize: 10, x: 10, y: 10, font: 'Helvetica', cmyk: [0, 0, 0, 1], includeExtension: true });
 			saveOverlays();
 			renderOverlayInputs();
 			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
@@ -1363,33 +2319,107 @@
 			if(window.drawSheetOverlays) window.drawSheetOverlays();
 		};
 
+		addSigMarkBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			const n = parseInt(addSigMarkBtn.dataset.detectedN) || 16;
+			window.__overlays.push({ type: 'sigmark', width: 1, height: 2, sigSize: n });
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.drawSheetOverlays) window.drawSheetOverlays();
+		};
+
 		// Initial render
 		renderOverlayInputs();
+
+		const updateSigMarkBtnState = () => {
+			const val = document.getElementById('pageRangeInput')?.value || '';
+			const nUpMatch = val.match(/(\d+)-?up/i);
+			
+			const r = parseInt(document.getElementById('rowsInput')?.value || 1);
+			const c = parseInt(document.getElementById('colsInput')?.value || 1);
+			const gridN = r * c;
+			
+			let detectedN = 0;
+
+			if (nUpMatch) {
+				detectedN = parseInt(nUpMatch[1]);
+				addSigMarkBtn.disabled = false;
+				addSigMarkBtn.style.opacity = '1';
+				addSigMarkBtn.dataset.detectedN = detectedN;
+			} else if (gridN > 1) {
+				detectedN = gridN;
+				addSigMarkBtn.disabled = false;
+				addSigMarkBtn.style.opacity = '1';
+				addSigMarkBtn.dataset.detectedN = detectedN;
+			} else {
+				addSigMarkBtn.disabled = true;
+				addSigMarkBtn.style.opacity = '0.5';
+			}
+
+			if (detectedN > 0 && window.__overlays) {
+				let changed = false;
+				window.__overlays.forEach(ov => {
+					if (ov.type === 'sigmark' && ov.sigSize !== detectedN) {
+						ov.sigSize = detectedN;
+						changed = true;
+					}
+				});
+				if (changed) {
+					saveOverlays();
+					if (ltContentData.style.display === 'block') {
+						renderOverlayInputs();
+					}
+					if(window.drawSheetOverlays) window.drawSheetOverlays();
+				}
+			}
+		};
+		
+		const prInput = document.getElementById('pageRangeInput');
+		if(prInput) prInput.addEventListener('input', updateSigMarkBtnState);
+		
+		const rInput = document.getElementById('rowsInput');
+		const cInput = document.getElementById('colsInput');
+		if(rInput) rInput.addEventListener('input', updateSigMarkBtnState);
+		if(cInput) cInput.addEventListener('input', updateSigMarkBtnState);
+
+		setTimeout(updateSigMarkBtnState, 500);
 	}
 
 	// wire UI: Right Toolbar Tabs
+	if (window.initStylesTab) window.initStylesTab();
+
 	const rtTabTransform = document.getElementById('rtTabTransform');
 	const rtTabLayout = document.getElementById('rtTabLayout');
+	const rtTabStyles = document.getElementById('rtTabStyles');
 	const rtContentTransform = document.getElementById('rtContentTransform');
 	const rtContentLayout = document.getElementById('rtContentLayout');
+	const rtContentStyles = document.getElementById('rtContentStyles');
 
 	if(rtTabTransform && rtTabLayout && rtContentTransform && rtContentLayout){
-		rtTabTransform.addEventListener('click', () => {
-			rtTabTransform.style.borderBottomColor = '#00bcd4';
-			rtTabTransform.style.color = '#fff';
-			rtTabLayout.style.borderBottomColor = 'transparent';
-			rtTabLayout.style.color = '#888';
-			rtContentTransform.style.display = 'block';
-			rtContentLayout.style.display = 'none';
-		});
-		rtTabLayout.addEventListener('click', () => {
-			rtTabLayout.style.borderBottomColor = '#00bcd4';
-			rtTabLayout.style.color = '#fff';
-			rtTabTransform.style.borderBottomColor = 'transparent';
-			rtTabTransform.style.color = '#888';
-			rtContentTransform.style.display = 'none';
-			rtContentLayout.style.display = 'block';
-		});
+		const tabs = [
+			{ btn: rtTabTransform, content: rtContentTransform },
+			{ btn: rtTabLayout, content: rtContentLayout },
+			{ btn: rtTabStyles, content: rtContentStyles }
+		];
+
+		const setActive = (activeBtn) => {
+			tabs.forEach(t => {
+				if(!t.btn || !t.content) return;
+				if(t.btn === activeBtn){
+					t.btn.style.borderBottomColor = '#00bcd4';
+					t.btn.style.color = '#fff';
+					t.content.style.display = 'block';
+				} else {
+					t.btn.style.borderBottomColor = 'transparent';
+					t.btn.style.color = '#888';
+					t.content.style.display = 'none';
+				}
+			});
+		};
+
+		rtTabTransform.addEventListener('click', () => setActive(rtTabTransform));
+		rtTabLayout.addEventListener('click', () => setActive(rtTabLayout));
+		if(rtTabStyles) rtTabStyles.addEventListener('click', () => setActive(rtTabStyles));
 	}
 
 	// wire UI: n-up Tools Dropdown
@@ -1467,49 +2497,15 @@
 	const stretchImageBtn = document.getElementById('stretchImageBtn');
 
 	if(fitImageBtn){
-		fitImageBtn.addEventListener('click', ()=>{
-			fitImageBtn.classList.toggle('active');
-			window.__preferUpscaleNotRotate = fitImageBtn.classList.contains('active');
-			if(window.__preferUpscaleNotRotate && fillImageBtn){
-				fillImageBtn.classList.remove('active');
-				window.__fillImage = false;
-			}
-			if(window.__preferUpscaleNotRotate && stretchImageBtn){
-				stretchImageBtn.classList.remove('active');
-				window.__stretchImage = false;
-			}
-			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
-		});
+		fitImageBtn.addEventListener('click', () => window.applyFitToSelection('fit'));
 	}
 
 	if(fillImageBtn){
-		fillImageBtn.addEventListener('click', ()=>{
-			fillImageBtn.classList.toggle('active');
-			window.__fillImage = fillImageBtn.classList.contains('active');
-			if(window.__fillImage && fitImageBtn){
-				fitImageBtn.classList.remove('active');
-				window.__preferUpscaleNotRotate = false;
-			}
-			if(window.__fillImage && stretchImageBtn){
-				stretchImageBtn.classList.remove('active');
-				window.__stretchImage = false;
-			}
-			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
-		});
+		fillImageBtn.addEventListener('click', () => window.applyFitToSelection('fill'));
 	}
 
 	if(stretchImageBtn){
-		stretchImageBtn.addEventListener('click', ()=>{
-			stretchImageBtn.classList.toggle('active');
-			window.__stretchImage = stretchImageBtn.classList.contains('active');
-			if(window.__stretchImage){
-				if(fitImageBtn) fitImageBtn.classList.remove('active');
-				if(fillImageBtn) fillImageBtn.classList.remove('active');
-				window.__preferUpscaleNotRotate = false;
-				window.__fillImage = false;
-			}
-			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
-		});
+		stretchImageBtn.addEventListener('click', () => window.applyFitToSelection('stretch'));
 	}
 
 	// wire UI: scale slider -> adjustContentScale
@@ -1547,20 +2543,15 @@
 
 		const isSpecific = scalePageCheck && scalePageCheck.checked;
 		const pageNums = isSpecific ? parsePageRange(scalePageNum.value) : [];
-		const firstPage = pageNums.length > 0 ? pageNums[0] : null;
-		const t = (firstPage && window.__pageTransforms[firstPage]) || {};
-
-		const curX = (isSpecific && typeof t.scaleX === 'number') ? t.scaleX : (window.__currentScaleX || 1);
-		const curY = (isSpecific && typeof t.scaleY === 'number') ? t.scaleY : (window.__currentScaleY || 1);
 		const isUnlocked = (typeof unlockRatioCheckbox !== 'undefined' && unlockRatioCheckbox && unlockRatioCheckbox.checked);
 
 		if(isWidth){
 			// If unlocked, update X only. If locked, update both to maintain aspect ratio.
-			if(isUnlocked) window.adjustContentScale(newScale, curY, isSpecific ? pageNums : null);
+			if(isUnlocked) window.adjustContentScale(newScale, undefined, isSpecific ? pageNums : null);
 			else window.adjustContentScale(newScale, newScale, isSpecific ? pageNums : null);
 		} else {
 			// If unlocked, update Y only. If locked, update both.
-			if(isUnlocked) window.adjustContentScale(curX, newScale, isSpecific ? pageNums : null);
+			if(isUnlocked) window.adjustContentScale(undefined, newScale, isSpecific ? pageNums : null);
 			else window.adjustContentScale(newScale, newScale, isSpecific ? pageNums : null);
 		}
 	}
@@ -1664,7 +2655,8 @@
 	// wire UI: box position inputs
 	if(boxXInput){
 		boxXInput.addEventListener('input', ()=>{
-			const x = parseFloat(boxXInput.value) || 0;
+			const pxPerMm = 96 / 25.4;
+			const x = (parseFloat(boxXInput.value) || 0) * pxPerMm;
 			const pageNums = (slotPageCheck && slotPageCheck.checked) ? parsePageRange(slotPageNum.value) : null;
 			window.adjustSlotPosition(x, undefined, pageNums);
 		});
@@ -1672,11 +2664,39 @@
 	}
 	if(boxYInput){
 		boxYInput.addEventListener('input', ()=>{
-			const y = parseFloat(boxYInput.value) || 0;
+			const pxPerMm = 96 / 25.4;
+			const y = (parseFloat(boxYInput.value) || 0) * pxPerMm;
 			const pageNums = (slotPageCheck && slotPageCheck.checked) ? parsePageRange(slotPageNum.value) : null;
 			window.adjustSlotPosition(undefined, y, pageNums);
 		});
 		boxYInput.addEventListener('mousedown', handleStep);
+
+		// Inject Duplex Mirror Checkbox
+		const duplexLabel = document.createElement('label');
+		duplexLabel.style.marginLeft = '8px';
+		duplexLabel.style.fontSize = '10px';
+		duplexLabel.style.display = 'inline-flex';
+		duplexLabel.style.alignItems = 'center';
+		duplexLabel.style.color = '#aaa';
+		duplexLabel.title = "Mirror X position on even sheets (back sides)";
+		
+		const duplexCheck = document.createElement('input');
+		duplexCheck.type = 'checkbox';
+		duplexCheck.id = 'gridDuplexCheck';
+		duplexCheck.style.marginRight = '4px';
+		
+		duplexLabel.appendChild(duplexCheck);
+		duplexLabel.appendChild(document.createTextNode('Mirror Even'));
+		
+		if(boxYInput.parentNode) boxYInput.parentNode.appendChild(duplexLabel);
+
+		duplexCheck.addEventListener('change', () => {
+			window.__gridDuplexMirror = duplexCheck.checked;
+			const pxPerMm = 96 / 25.4;
+			const x = (parseFloat(boxXInput.value) || 0) * pxPerMm;
+			const y = (parseFloat(boxYInput.value) || 0) * pxPerMm;
+			window.adjustSlotPosition(x, y);
+		});
 	}
 
 	// wire UI: preview page check
@@ -1781,7 +2801,7 @@
 				setTimeout(()=>{
 					window.__renderNative = wasNative;
 					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
-				}, 500);
+				}, 50);
 			}, 50);
 		} else {
 			window.print();
@@ -1814,6 +2834,10 @@
 			el.addEventListener('mousedown', handleStep);
 		}
 	});
+	const showCropMarksCheck = document.getElementById('showCropMarksCheck');
+	if(showCropMarksCheck){
+		showCropMarksCheck.addEventListener('change', refreshCrops);
+	}
 
 	// wire UI: Activity Bar Tools
 	const toolIds = ['toolSelectBtn', 'toolSwapBtn', 'toolRotateBtn', 'toolScaleBtn', 'toolSkewBtn'];
@@ -2486,8 +3510,407 @@
 		});
 	}
 
-	// wire UI: Responsive Toolbar
+	// wire UI: File Menu & Export Blocks
 	const toolbarButtons = document.getElementById('toolbarButtons');
+	
+	if (toolbarButtons) {
+		const fileBtnContainer = document.createElement('div');
+		fileBtnContainer.className = 'dropdown-container';
+		fileBtnContainer.style.position = 'relative';
+		
+		const fileBtn = document.createElement('button');
+		fileBtn.id = 'fileMenuBtn';
+		fileBtn.className = 'toolbar-btn';
+		fileBtn.innerHTML = '<span class="material-icons">folder</span> File <span class="material-icons" style="font-size:14px">arrow_drop_down</span>';
+		fileBtn.style.display = 'flex';
+		fileBtn.style.alignItems = 'center';
+		fileBtn.style.gap = '4px';
+		
+		const fileDropdown = document.createElement('div');
+		fileDropdown.id = 'fileMenuDropdown';
+		fileDropdown.className = 'dropdown-content';
+		fileDropdown.style.display = 'none';
+		fileDropdown.style.position = 'absolute';
+		fileDropdown.style.top = '100%';
+		fileDropdown.style.left = '0';
+		fileDropdown.style.backgroundColor = '#333';
+		fileDropdown.style.border = '1px solid #555';
+		fileDropdown.style.borderRadius = '4px';
+		fileDropdown.style.padding = '5px 0';
+		fileDropdown.style.zIndex = '2000';
+		fileDropdown.style.minWidth = '180px';
+		fileDropdown.style.flexDirection = 'column';
+
+		const createMenuItem = (text, icon, onClick) => {
+			const btn = document.createElement('button');
+			btn.className = 'dropdown-item';
+			btn.style.display = 'flex';
+			btn.style.alignItems = 'center';
+			btn.style.gap = '8px';
+			btn.style.width = '100%';
+			btn.style.padding = '8px 12px';
+			btn.style.border = 'none';
+			btn.style.background = 'transparent';
+			btn.style.color = '#eee';
+			btn.style.textAlign = 'left';
+			btn.style.cursor = 'pointer';
+			btn.innerHTML = `<span class="material-icons" style="font-size:18px">${icon}</span> ${text}`;
+			btn.onmouseover = () => btn.style.background = '#444';
+			btn.onmouseout = () => btn.style.background = 'transparent';
+			btn.onclick = (e) => {
+				e.stopPropagation();
+				fileDropdown.style.display = 'none';
+				onClick();
+			};
+			return btn;
+		};
+
+		fileDropdown.appendChild(createMenuItem('Open PDF...', 'file_open', () => document.getElementById('fileInput')?.click()));
+		fileDropdown.appendChild(createMenuItem('Export PDF', 'picture_as_pdf', () => window.generateImposedPdf && window.generateImposedPdf()));
+		
+		const sep = document.createElement('div');
+		sep.style.height = '1px';
+		sep.style.background = '#555';
+		sep.style.margin = '4px 0';
+		fileDropdown.appendChild(sep);
+
+		fileDropdown.appendChild(createMenuItem('Export to Blocks...', 'view_module', showExportBlocksDialog));
+
+		fileBtnContainer.appendChild(fileBtn);
+		fileBtnContainer.appendChild(fileDropdown);
+		
+		toolbarButtons.insertBefore(fileBtnContainer, toolbarButtons.firstChild);
+
+		fileBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const isVisible = fileDropdown.style.display === 'flex';
+			document.querySelectorAll('.dropdown-content').forEach(el => el.style.display = 'none');
+			fileDropdown.style.display = isVisible ? 'none' : 'flex';
+		});
+
+		document.addEventListener('click', () => {
+			fileDropdown.style.display = 'none';
+		});
+	}
+
+	// Export to Blocks Dialog
+	function showExportBlocksDialog() {
+		const pageRangeVal = document.getElementById('pageRangeInput')?.value || '';
+		const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+		const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+		const slotsPerSheet = rows * cols;
+
+		// Detect structured n-up sections (e.g. "16-up(1-224)")
+		const nUpRegex = /(\d+)-?up\s*\(([^)]+)\)/gi;
+		const matches = [...pageRangeVal.matchAll(nUpRegex)];
+		const sections = [];
+		let isStructured = false;
+
+		if (matches.length > 0) {
+			isStructured = true;
+			let currentSheetOffset = 0;
+			for (const m of matches) {
+				const n = parseInt(m[1]);
+				const rawStr = m[0];
+				// Calculate how many sheets this section occupies
+				const slots = window.parsePageOrder ? window.parsePageOrder(rawStr).length : 0;
+				const sheets = Math.ceil(slots / slotsPerSheet);
+				
+				sections.push({
+					n: n,
+					raw: rawStr,
+					slots: slots,
+					sheets: sheets,
+					startSheet: currentSheetOffset
+				});
+				currentSheetOffset += sheets;
+			}
+		}
+
+		// Fallback detection for simple mode
+		let detectedN = 16;
+		if (!isStructured) {
+			const shorthandMatch = pageRangeVal.match(/^(\d+)-?up$/i);
+			if (shorthandMatch) {
+				detectedN = parseInt(shorthandMatch[1], 10);
+			} else {
+				const matchesSimple = [...pageRangeVal.matchAll(/(\d+)-?up/gi)];
+				if (matchesSimple.length > 0) {
+					detectedN = Math.max(...matchesSimple.map(m => parseInt(m[1], 10)));
+				}
+			}
+			if (detectedN <= 0) detectedN = 16;
+		}
+
+		const dialog = document.createElement('div');
+		Object.assign(dialog.style, {
+			position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+			backgroundColor: 'rgba(0,0,0,0.5)', zIndex: '3000', display: 'flex',
+			alignItems: 'center', justifyContent: 'center'
+		});
+
+		const content = document.createElement('div');
+		Object.assign(content.style, {
+			backgroundColor: '#222', padding: '20px', borderRadius: '8px',
+			border: '1px solid #444', width: isStructured ? '600px' : '350px', color: '#eee',
+			boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+		});
+
+		let innerHTML = `<h3 style="margin-top:0; margin-bottom:15px; border-bottom:1px solid #444; padding-bottom:10px">Export to Blocks</h3>`;
+
+		if (isStructured) {
+			innerHTML += `
+				<div style="margin-bottom:15px; max-height:300px; overflow-y:auto; border:1px solid #444; padding:5px; background:#111;">
+					<table style="width:100%; border-collapse:collapse; font-size:12px;">
+						<thead>
+							<tr style="border-bottom:1px solid #444; color:#aaa; text-align:left;">
+								<th style="padding:4px;">Section</th>
+								<th style="padding:4px;">Signature</th>
+								<th style="padding:4px;">Sheets</th>
+								<th style="padding:4px;">Blocks</th>
+								<th style="padding:4px;">Export Mode</th>
+							</tr>
+						</thead>
+						<tbody>
+							${sections.map((s, i) => `
+								<tr>
+									<td style="padding:4px; color:#fff;">${i+1}</td>
+									<td style="padding:4px; color:#00bcd4;">${s.n}-up</td>
+									<td style="padding:4px;">${s.sheets}</td>
+									<td style="padding:4px;">${Math.ceil(s.n / (slotsPerSheet * 2))} (Duplex)</td>
+									<td style="padding:4px;">
+										<select id="mode_${i}" class="toolbox-input section-mode-select" style="width:100%; padding:2px;">
+											<option value="blocks">Blocks</option>
+											<option value="booklet">Booklet (Sheets)</option>
+										</select>
+									</td>
+								</tr>
+							`).join('')}
+						</tbody>
+					</table>
+				</div>
+				<div style="margin-bottom:15px">
+					<label style="display:flex; alignItems:center; gap:8px; cursor:pointer">
+						<input type="checkbox" id="blockDuplex" checked>
+						<span>Duplex (2 pages per sheet)</span>
+					</label>
+				</div>
+				<div id="blockInfo" style="margin-bottom:20px; font-size:12px; color:#ccc;">
+					Will export blocks for ${sections.length} detected sections.
+				</div>
+			`;
+		} else {
+			const sizes = [4, 8, 16, 32, 64];
+			if (!sizes.includes(detectedN)) {
+				sizes.push(detectedN);
+				sizes.sort((a, b) => a - b);
+			}
+			const optionsHtml = sizes.map(s => `<option value="${s}" ${s === detectedN ? 'selected' : ''}>${s}-up</option>`).join('');
+
+			innerHTML += `
+				<div style="margin-bottom:15px">
+					<label style="display:block; margin-bottom:5px; font-size:12px; color:#aaa">Signature Size (Pages)</label>
+					<select id="blockSigSize" class="toolbox-input" style="width:100%">
+						${optionsHtml}
+					</select>
+				</div>
+				<div style="margin-bottom:15px">
+					<label style="display:flex; alignItems:center; gap:8px; cursor:pointer">
+						<input type="checkbox" id="blockDuplex" checked>
+						<span>Duplex (2 pages per sheet)</span>
+					</label>
+				</div>
+				<div id="blockInfo" style="margin-bottom:20px; font-size:12px; color:#00bcd4; min-height:1.2em"></div>
+			`;
+		}
+
+		innerHTML += `
+			<div style="display:flex; justify-content:flex-end; gap:10px">
+				<button id="blockCancel" class="toolbox-btn" style="width:auto; padding:6px 12px">Cancel</button>
+				<button id="blockExport" class="toolbox-btn" style="width:auto; padding:6px 12px; background-color:#00bcd4; color:#000; font-weight:bold">Export</button>
+			</div>
+		`;
+
+		content.innerHTML = innerHTML;
+		dialog.appendChild(content);
+		document.body.appendChild(dialog);
+
+		const duplexCheck = content.querySelector('#blockDuplex');
+		const infoDiv = content.querySelector('#blockInfo');
+		const cancelBtn = content.querySelector('#blockCancel');
+		const exportBtn = content.querySelector('#blockExport');
+		const sigSelect = content.querySelector('#blockSigSize'); // Only in simple mode
+
+		const updateInfo = () => {
+			if (isStructured) {
+				return;
+			}
+			const sigSize = parseInt(sigSelect.value);
+			const isDuplex = duplexCheck.checked;
+			const pagesPerSheet = slotsPerSheet * (isDuplex ? 2 : 1);
+			const sheetsPerSig = sigSize / pagesPerSheet;
+
+			if (!Number.isInteger(sheetsPerSig)) {
+				infoDiv.textContent = `Warning: Signature size ${sigSize} is not divisible by ${pagesPerSheet} pages/sheet.`;
+				infoDiv.style.color = '#ff9f9f';
+				exportBtn.disabled = true;
+				exportBtn.style.opacity = '0.5';
+			} else {
+				infoDiv.textContent = `Will export ${sheetsPerSig} blocks (1 for each sheet position in signature).`;
+				infoDiv.style.color = '#00bcd4';
+				exportBtn.disabled = false;
+				exportBtn.style.opacity = '1';
+			}
+		};
+
+		if (sigSelect) sigSelect.addEventListener('change', updateInfo);
+		duplexCheck.addEventListener('change', updateInfo);
+		updateInfo();
+
+		cancelBtn.onclick = () => document.body.removeChild(dialog);
+
+		exportBtn.onclick = async () => {
+			const isDuplex = duplexCheck.checked;
+			// Capture modes before removing dialog
+			const sectionModes = [];
+			if(isStructured){
+				for(let i=0; i<sections.length; i++){
+					const sel = content.querySelector(`#mode_${i}`);
+					sectionModes.push(sel ? sel.value : 'blocks');
+				}
+			}
+
+			document.body.removeChild(dialog);
+
+			if (window.generateImposedPdf && window.PDFLib) {
+				try {
+					const pdfBytes = await window.generateImposedPdf({ returnBytes: true });
+					if (!pdfBytes) return;
+
+					const { PDFDocument } = window.PDFLib;
+					const srcDoc = await PDFDocument.load(pdfBytes);
+					const totalPdfPages = srcDoc.getPageCount();
+					const physicalSheetsTotal = Math.ceil(totalPdfPages / (isDuplex ? 2 : 1));
+
+					const exportSection = async (sectionIndex, sigSize, startSheet, numSheets, mode) => {
+						const prefix = isStructured ? `Section${sectionIndex+1}_` : '';
+
+						if (mode === 'booklet') {
+							// Export all sheets in this section as one PDF
+							const doc = await PDFDocument.create();
+							const indices = [];
+							// numSheets is the number of sides (PDF pages) in this section
+							for(let i=0; i<numSheets; i++) {
+								const sheetIdx = startSheet + i;
+								indices.push(sheetIdx);
+							}
+							// Filter out of bounds
+							const validIndices = indices.filter(idx => idx < totalPdfPages);
+							if(validIndices.length > 0){
+								const pages = await doc.copyPages(srcDoc, validIndices);
+								pages.forEach(p => doc.addPage(p));
+								const bytes = await doc.save();
+								downloadBlob(bytes, `${prefix}Booklet.pdf`);
+							}
+							return;
+						}
+
+						// Block Export Logic
+						const pagesPerSheet = slotsPerSheet * (isDuplex ? 2 : 1);
+						const sheetsPerSig = sigSize / pagesPerSheet;
+						
+						// Convert sides (numSheets) to physical sheets
+						const physicalSheetsInSection = Math.ceil(numSheets / (isDuplex ? 2 : 1));
+						
+						const numSigs = Math.floor(physicalSheetsInSection / sheetsPerSig);
+						const remainderSheets = physicalSheetsInSection % sheetsPerSig;
+
+						// Export Blocks
+						for (let b = 0; b < sheetsPerSig; b++) {
+							const blockDoc = await PDFDocument.create();
+							const indices = [];
+							for (let s = 0; s < numSigs; s++) {
+								const relativePhysicalSheetIndex = s * sheetsPerSig + b;
+								
+								if (isDuplex) {
+									const p1 = startSheet + relativePhysicalSheetIndex * 2;
+									const p2 = startSheet + relativePhysicalSheetIndex * 2 + 1;
+									if (p1 < totalPdfPages && p1 < startSheet + numSheets) indices.push(p1);
+									if (p2 < totalPdfPages && p2 < startSheet + numSheets) indices.push(p2);
+								} else {
+									const p1 = startSheet + relativePhysicalSheetIndex;
+									if (p1 < totalPdfPages && p1 < startSheet + numSheets) indices.push(p1);
+								}
+							}
+							
+							if (indices.length > 0) {
+								const pages = await blockDoc.copyPages(srcDoc, indices);
+								pages.forEach(p => blockDoc.addPage(p));
+								const blockBytes = await blockDoc.save();
+								downloadBlob(blockBytes, `${prefix}Block_${b + 1}.pdf`);
+                                await new Promise(r => setTimeout(r, 50)); // Delay to prevent browser blocking
+							}
+						}
+
+						// Export Remainder
+						if (remainderSheets > 0) {
+							const remDoc = await PDFDocument.create();
+							const indices = [];
+							const startRelPhysicalSheet = numSigs * sheetsPerSig;
+							for (let r = 0; r < remainderSheets; r++) {
+								const relativePhysicalSheetIndex = startRelPhysicalSheet + r;
+								
+								if (isDuplex) {
+									const p1 = startSheet + relativePhysicalSheetIndex * 2;
+									const p2 = startSheet + relativePhysicalSheetIndex * 2 + 1;
+									if (p1 < totalPdfPages && p1 < startSheet + numSheets) indices.push(p1);
+									if (p2 < totalPdfPages && p2 < startSheet + numSheets) indices.push(p2);
+								} else {
+									const p1 = startSheet + relativePhysicalSheetIndex;
+									if (p1 < totalPdfPages && p1 < startSheet + numSheets) indices.push(p1);
+								}
+							}
+							if (indices.length > 0) {
+								const pages = await remDoc.copyPages(srcDoc, indices);
+								pages.forEach(p => remDoc.addPage(p));
+								const remBytes = await remDoc.save();
+								downloadBlob(remBytes, `${prefix}Block_Remainder.pdf`);
+                                await new Promise(r => setTimeout(r, 50)); // Delay
+							}
+						}
+					};
+
+					if (isStructured) {
+						for (let i = 0; i < sections.length; i++) {
+							const s = sections[i];
+							await exportSection(i, s.n, s.startSheet, s.sheets, sectionModes[i]);
+                            await new Promise(r => setTimeout(r, 100)); // Delay between sections
+						}
+					} else {
+						const sigSize = parseInt(sigSelect.value);
+						await exportSection(0, sigSize, 0, totalPdfPages, 'blocks');
+					}
+
+				} catch (e) {
+					console.error(e);
+					alert('Error exporting blocks: ' + e.message);
+				}
+			}
+		};
+	}
+
+
+	function downloadBlob(bytes, filename) {
+		const blob = new Blob([bytes], { type: 'application/pdf' });
+		const link = document.createElement('a');
+		link.href = URL.createObjectURL(blob);
+		link.download = filename;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
+
+	// wire UI: Responsive Toolbar
 	const toolbarOverflowBtn = document.getElementById('toolbarOverflowBtn');
 	const toolbarOverflowDropdown = document.getElementById('toolbarOverflowDropdown');
 	const toolbarRightSection = document.querySelector('.toolbar-right-section');
@@ -2583,7 +4006,7 @@
 	const originalOpenPdf = window.openPdfFile;
 	window.openPdfFile = async function(arg){
 		await originalOpenPdf(arg);
-		if(layoutSelect && layoutSelect.value && layoutSelect.value !== 'Default'){
+		if(layoutSelect && layoutSelect.value){
 			window.applyCurrentLayout();
 		}
 		if(window.fitSheetsToWorkspace) window.fitSheetsToWorkspace();
@@ -2596,6 +4019,7 @@
 		// Default / Global values
 		let r = window.__currentRotation || 0;
 		let sX = window.__currentScaleX || 1;
+		let sY = window.__currentScaleY || 1;
 		let skX = window.__skewX || 0;
 		let skY = window.__skewY || 0;
 		let offX = window.__offsetX || 0;
@@ -2608,8 +4032,11 @@
 		
 		let trimW = window.__trimW || 0;
 		let trimH = window.__trimH || 0;
+		let fitToPage = window.__fitToPage;
+		const transformAll = document.getElementById('transformAllPagesCheckbox')?.checked;
 
-		if(window.__selectedSlots && window.__selectedSlots.length > 0){
+
+		if(!transformAll && window.__selectedSlots && window.__selectedSlots.length > 0){
 			const i = window.__selectedSlots[0];
 			const el = document.getElementsByClassName('preview')[i];
 			const pageNum = el ? parseInt(el.dataset.pageNum) : null;
@@ -2625,6 +4052,7 @@
 
 			r = getVal('rotation', r);
 			sX = getVal('scaleX', sX);
+			sY = getVal('scaleY', sY);
 			skX = getVal('skewX', skX);
 			skY = getVal('skewY', skY);
 			offX = getVal('offsetX', offX);
@@ -2641,10 +4069,29 @@
 			
 			if(layout.width !== undefined) trimW = w - (l + r_exp);
 			if(layout.height !== undefined) trimH = h - (t + b);
+
+			if (slotT.fitToPage !== undefined) fitToPage = slotT.fitToPage;
+			else if (pageT.fitToPage !== undefined) fitToPage = pageT.fitToPage;
+		}
+
+		// Calculate effective scale if fitting
+		if(fitToPage && sX === 1 && sY === 1 && window.calculatePageFit && window.__fileWidthMm && window.__fileHeightMm){
+			const imgW = window.__fileWidthMm * pxPerMm;
+			const imgH = window.__fileHeightMm * pxPerMm;
+			const fit = window.calculatePageFit(imgW, imgH, trimW, trimH, r, skX, skY, fitMode);
+			if(fit){
+				if(fitMode === 'stretch'){
+					sX = fit.scaleX;
+					sY = fit.scaleY;
+				} else {
+					sX = fit.scale;
+					sY = fit.scale;
+				}
+			}
 		}
 
 		// Update UI Elements
-		const setVal = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
+		const setVal = (id, val) => { const el = document.getElementById(id); if(el && document.activeElement !== el) el.value = val; };
 		const setTxt = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
 
 		setVal('rotationInput', r);
@@ -2652,6 +4099,13 @@
 		
 		setVal('scaleSlider', Math.round(sX * 100));
 		setTxt('scaleValue', Math.round(sX * 100) + '%');
+
+		if(window.__fileWidthMm && window.__fileHeightMm){
+			const wIn = document.getElementById('widthInput');
+			const hIn = document.getElementById('heightInput');
+			if(wIn && document.activeElement !== wIn) wIn.value = (window.__fileWidthMm * sX).toFixed(2);
+			if(hIn && document.activeElement !== hIn) hIn.value = (window.__fileHeightMm * sY).toFixed(2);
+		}
 
 		setVal('skewXInput', skX);
 		setVal('skewYInput', skY);
@@ -2678,6 +4132,24 @@
 		}
 		if(hIn && window.__fileHeightMm){
 			hIn.style.color = (Math.abs(parseFloat(hIn.value) - window.__fileHeightMm) > 0.05) ? 'red' : '';
+		}
+		
+		const scaleIn = document.getElementById('slotScalePercentInput');
+		if(scaleIn && window.__fileWidthMm && trimW > 0){
+			const pct = Math.round((trimW / window.__fileWidthMm) * 100);
+			if(document.activeElement !== scaleIn) scaleIn.value = pct;
+		}
+
+		const linkCheck = document.getElementById('linkSlotScaleCheckbox');
+		if(linkCheck) linkCheck.checked = !!fitToPage;
+
+		const resizeAllCheck = document.getElementById('resizeAllFramesCheckbox');
+		if(resizeAllCheck) resizeAllCheck.checked = (!window.__selectedSlots || window.__selectedSlots.length === 0);
+
+		const transformAllCheck = document.getElementById('transformAllPagesCheckbox');
+		if(transformAllCheck && !transformAllCheck.hasAttribute('data-init')){
+			transformAllCheck.setAttribute('data-init', 'true');
+			transformAllCheck.addEventListener('change', window.syncSelectionToUI);
 		}
 	};
 

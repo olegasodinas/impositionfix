@@ -24,6 +24,9 @@ window.drawSheetCropMarks = function(){
 	// Clear existing marks on all sheets
 	document.querySelectorAll('.sheet-crop-marks').forEach(e => e.remove());
 
+	const showCheck = document.getElementById('showCropMarksCheck');
+	if(showCheck && !showCheck.checked) return;
+
 	// Get settings
 	const getVal = (id, def) => {
 		const el = document.getElementById(id);
@@ -55,37 +58,6 @@ window.drawSheetCropMarks = function(){
 	if(innerStyle === 'dashed') innerDash = '4,2';
 	else if(innerStyle === 'dotted') innerDash = '1,2';
 
-	// Assume all sheets are same size, calculate metrics once
-	const refSheet = containers[0];
-	const centerX = (refSheet.clientWidth / 2) + (window.__slotX || 0);
-	const centerY = (refSheet.clientHeight / 2) + (window.__slotY || 0);
-
-	// Calculate Grid Metrics
-	// The grid is centered on the sheet (at centerX, centerY).
-	// Grid total size is cols*slotW, rows*slotH.
-	const gridTotalW = cols * slotW;
-	const gridTotalH = rows * slotH;
-	const gridLeft = centerX - (gridTotalW / 2);
-	const gridTop = centerY - (gridTotalH / 2);
-
-	// Vertical Marks (Top/Bottom)
-	// Positioned relative to the center of the grid (or sheet)
-	// Top marks start above the grid top edge
-	const startY = gridTop - gapY;
-	const endY = startY - len; // Draw UP
-	const startY_Bottom = gridTop + gridTotalH + gapY;
-	const endY_Bottom = startY_Bottom + len; // Draw DOWN
-
-	// Horizontal Marks (Left/Right)
-	const startX_Left = gridLeft - gapX;
-	const endX_Left = startX_Left - len; // Draw LEFT
-	const startX_Right = gridLeft + gridTotalW + gapX;
-	const endX_Right = startX_Right + len; // Draw RIGHT
-
-	// Helper to get center of slot i
-	const getSlotCenterX = (colIndex) => gridLeft + (colIndex * slotW) + (slotW / 2);
-	const getSlotCenterY = (rowIndex) => gridTop + (rowIndex * slotH) + (slotH / 2);
-
 	const createLine = (x1, y1, x2, y2, dashArray) => {
 		const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
 		line.setAttribute('x1', x1);
@@ -99,7 +71,7 @@ window.drawSheetCropMarks = function(){
 	};
 
 	// Draw on each sheet
-	containers.forEach(container => {
+	containers.forEach((container, sheetIndex) => {
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.setAttribute('class', 'sheet-crop-marks');
 		svg.style.position = 'absolute';
@@ -110,6 +82,31 @@ window.drawSheetCropMarks = function(){
 		svg.style.pointerEvents = 'none';
 		svg.style.zIndex = '9999';
 		svg.style.overflow = 'visible';
+
+		// Calculate metrics per sheet to support mirroring
+		let currentSlotX = window.__slotX || 0;
+		if (window.__gridDuplexMirror && sheetIndex % 2 !== 0) {
+			currentSlotX = -currentSlotX;
+		}
+		const centerX = (container.clientWidth / 2) + currentSlotX;
+		const centerY = (container.clientHeight / 2) + (window.__slotY || 0);
+
+		const gridTotalW = cols * slotW;
+		const gridTotalH = rows * slotH;
+		const gridLeft = centerX - (gridTotalW / 2);
+		const gridTop = centerY - (gridTotalH / 2);
+
+		// Vertical Marks (Top/Bottom)
+		const startY = gridTop - gapY;
+		const endY = startY - len; // Draw UP
+		const startY_Bottom = gridTop + gridTotalH + gapY;
+		const endY_Bottom = startY_Bottom + len; // Draw DOWN
+
+		// Horizontal Marks (Left/Right)
+		const startX_Left = gridLeft - gapX;
+		const endX_Left = startX_Left - len; // Draw LEFT
+		const startX_Right = gridLeft + gridTotalW + gapX;
+		const endX_Right = startX_Right + len; // Draw RIGHT
 
 		// Top-Left Vertical
 		const xTL = gridLeft + bleedX;

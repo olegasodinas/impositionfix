@@ -23,6 +23,22 @@ window.__overlays = [];
 // Helper to check page range
 function isPageInRange(pageNum, rangeStr) {
 	if (!rangeStr || !rangeStr.trim()) return true;
+
+	if (window.parsePageOrder) {
+		if (!isPageInRange.cache || isPageInRange.renderId !== window.__renderId) {
+			isPageInRange.cache = {};
+			isPageInRange.renderId = window.__renderId;
+		}
+		if (!isPageInRange.cache[rangeStr]) {
+			try {
+				isPageInRange.cache[rangeStr] = new Set(window.parsePageOrder(rangeStr));
+			} catch (e) {
+				isPageInRange.cache[rangeStr] = new Set();
+			}
+		}
+		return isPageInRange.cache[rangeStr].has(pageNum);
+	}
+
 	const parts = rangeStr.split(/[\s,]+/);
 	for (const part of parts) {
 		if (!part) continue;
@@ -41,8 +57,73 @@ function isPageInRange(pageNum, rangeStr) {
 	return false;
 }
 
+// Helper to calculate row index for data merge based on filter
+function getMergeRowIndex(pageNum, startPage, filter) {
+	if (pageNum < startPage) return -1;
+	if (filter === 'all') return pageNum - startPage;
+	if (filter === 'odd') {
+		const oddsUpTo = (n) => Math.ceil(n / 2);
+		return oddsUpTo(pageNum) - oddsUpTo(startPage - 1) - 1;
+	}
+	if (filter === 'even') {
+		const evensUpTo = (n) => Math.floor(n / 2);
+		return evensUpTo(pageNum) - evensUpTo(startPage - 1) - 1;
+	}
+	return -1;
+}
+
+// Helper to get file index for page
+function getFileIndexForPage(pageNum) {
+	if (!window.__filePageCounts || window.__filePageCounts.length === 0) return 0;
+	let countSoFar = 0;
+	for (let k = 0; k < window.__filePageCounts.length; k++) {
+		if (pageNum <= countSoFar + window.__filePageCounts[k]) {
+			return k;
+		}
+		countSoFar += window.__filePageCounts[k];
+	}
+	return window.__filePageCounts.length - 1;
+}
+
+// Helper to get file name for page
+function getFileNameForPage(pageNum) {
+	if (!window.__filePageCounts || !window.__fileNames || window.__filePageCounts.length === 0) {
+		return (window.__fileNames && window.__fileNames[0]) || "";
+	}
+	let countSoFar = 0;
+	for (let k = 0; k < window.__filePageCounts.length; k++) {
+		if (pageNum <= countSoFar + window.__filePageCounts[k]) {
+			if(window.__importedFiles && window.__importedFiles[k] && window.__importedFiles[k].type === 'group'){
+				const group = window.__importedFiles[k];
+				const localIdx = pageNum - countSoFar - 1;
+				if(group.files && group.files[localIdx]){
+					return group.files[localIdx].name;
+				}
+			}
+			return window.__fileNames[k] || "";
+		}
+		countSoFar += window.__filePageCounts[k];
+	}
+	return window.__fileNames[window.__fileNames.length - 1] || "";
+}
+
+// Helper to get ordered pages for numbering (cached on overlay)
+function getOverlayPageList(overlay) {
+	const key = overlay.useSpecificPages ? overlay.specificPages : overlay.pageRange;
+	if (!key || !key.trim()) return null;
+	
+	if (overlay._cachedRangeStr !== key || !overlay._cachedPageList || overlay._cachedRenderId !== window.__renderId) {
+		overlay._cachedRangeStr = key;
+		overlay._cachedRenderId = window.__renderId;
+		try {
+			overlay._cachedPageList = window.parsePageOrder ? window.parsePageOrder(key) : [];
+		} catch (e) { overlay._cachedPageList = []; }
+	}
+	return overlay._cachedPageList;
+}
+
 // Add overlays to the HTML preview slot
-window.addPreviewOverlays = function(container, pageNum, offset) {
+window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, pagesToRender) {
 	const pxPerMm = 96 / 25.4;
 	const offX = offset ? (offset.x || 0) : 0;
 	const offY = offset ? (offset.y || 0) : 0;
@@ -57,6 +138,8 @@ window.addPreviewOverlays = function(container, pageNum, offset) {
 
 	window.__overlays.forEach(overlay => {
 		if (overlay.visible === false) return;
+		if (['colorbar', 'duplex', 'sigmark'].includes(overlay.type)) return;
+
 		// Position relative to trim box (offset by expansion)
 		const x = (parseFloat(overlay.x) || 0) * pxPerMm + offX;
 		const y = (parseFloat(overlay.y) || 0) * pxPerMm + offY;
@@ -69,13 +152,38 @@ window.addPreviewOverlays = function(container, pageNum, offset) {
 		div.style.zIndex = '5';
 		div.style.pointerEvents = 'none';
 
-		if (overlay.type === 'numbering') {
+		if (overlay.type === 'numbering' || overlay.type === 'filename') {
 			if (pageNum <= 0) return; // Don't number empty pages
-			if (!isPageInRange(pageNum, overlay.pageRange)) return;
-			const prefix = overlay.prefix || '';
-			const digits = parseInt(overlay.digits) || 0;
-			const numStr = String(pageNum).padStart(digits, '0');
-			div.textContent = prefix + numStr;
+			
+			let textContent = "";
+
+			if (overlay.type === 'numbering') {
+				const start = (typeof overlay.startFrom === 'number') ? overlay.startFrom : 1;
+				let pageIndex = -1;
+				const pageList = getOverlayPageList(overlay);
+				
+				if (pageList) {
+					pageIndex = pageList.indexOf(pageNum);
+				} else if (pageNum > 0 && !overlay.useSpecificPages) {
+					pageIndex = pageNum - 1;
+				}
+
+				if (pageIndex !== -1) {
+					const count = pageIndex + 1;
+					let num = count;
+					num = num + start - 1;
+					const prefix = overlay.prefix || '';
+					const digits = parseInt(overlay.digits) || 0;
+					textContent = prefix + String(num).padStart(digits, '0');
+				} else return;
+				div.textContent = textContent;
+			} else {
+				if (overlay.allFiles === false && overlay.fileIndex !== undefined) {
+					if (getFileIndexForPage(pageNum) !== overlay.fileIndex) return;
+				}
+				const rawName = getFileNameForPage(pageNum);
+				div.textContent = (overlay.includeExtension !== false) ? rawName : rawName.replace(/\.[^/.]+$/, "");
+			}
 			
 			if (overlay.facingPages && pageNum % 2 === 0) {
 				const xMm = parseFloat(overlay.x) || 0;
@@ -85,28 +193,58 @@ window.addPreviewOverlays = function(container, pageNum, offset) {
 				div.style.textAlign = 'right';
 			}
 
-			// Convert pt to px for preview (1pt = 96/72 px)
-			const ptSize = parseFloat(overlay.fontSize) || 12;
-			const pxSize = ptSize * (96/72);
-			div.style.fontSize = pxSize + 'px';
+			const style = (window.__textStyles && overlay.styleId) ? window.__textStyles[overlay.styleId] : null;
 			
-			// Map PDF font to CSS
+			let fontSize = 12;
 			let fontFamily = 'sans-serif';
 			let fontWeight = 'normal';
 			let fontStyle = 'normal';
-			const f = overlay.font || 'Helvetica';
-			
-			if(f.startsWith('Times')) fontFamily = '"Times New Roman", serif';
-			else if(f.startsWith('Courier')) fontFamily = '"Courier New", monospace';
-			
-			if(f.includes('Bold')) fontWeight = 'bold';
-			if(f.includes('Italic') || f.includes('Oblique')) fontStyle = 'italic';
+			let color = 'black';
+			let opacity = 1;
+			let fontVariationSettings = '';
 
+			if (style) {
+				fontSize = parseFloat(style.fontSize) || 12;
+				const fam = style.fontFamily || 'Helvetica';
+				if (window.__customFonts && window.__customFonts[fam]) {
+					fontFamily = `"${fam}", sans-serif`;
+				} else if (fam.startsWith('Times')) fontFamily = '"Times New Roman", serif';
+				else if (fam.startsWith('Courier')) fontFamily = '"Courier New", monospace';
+				else fontFamily = 'sans-serif';
+
+				const fStyle = style.fontStyle || 'Normal';
+				
+				// Check for variable font mapping
+				if (window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
+					const settings = window.__fontVariationsCache[fam].map[fStyle];
+					// Map known axes to CSS
+					const cssSettings = [];
+					for (const [axis, value] of Object.entries(settings)) {
+						cssSettings.push(`'${axis}' ${value}`);
+					}
+					fontVariationSettings = cssSettings.join(', ');
+				} else {
+					if (fStyle.includes('Bold')) fontWeight = 'bold';
+					if (fStyle.includes('Italic')) fontStyle = 'italic';
+				}
+
+				const c = style.color || [0, 0, 0, 1];
+				color = `rgb(${Math.round(255*(1-c[0])*(1-c[3]))},${Math.round(255*(1-c[1])*(1-c[3]))},${Math.round(255*(1-c[2])*(1-c[3]))})`;
+				if (style.opacity !== undefined) opacity = style.opacity;
+				
+				if (style.align === 'center') div.style.transform = 'translateX(-50%)';
+				else if (style.align === 'right') div.style.transform = 'translateX(-100%)';
+			}
+
+			// Convert pt to px for preview (1pt = 96/72 px)
+			const pxSize = fontSize * (96/72);
+			div.style.fontSize = pxSize + 'px';
 			div.style.fontFamily = fontFamily;
 			div.style.fontWeight = fontWeight;
 			div.style.fontStyle = fontStyle;
-			const c = overlay.cmyk || [0, 0, 0, 1];
-			div.style.color = toRgb(c[0], c[1], c[2], c[3]);
+			div.style.color = color;
+			div.style.opacity = opacity;
+			if(fontVariationSettings) div.style.fontVariationSettings = fontVariationSettings;
 			div.style.whiteSpace = 'nowrap';
 		} else {
 			// Default square
@@ -128,6 +266,79 @@ window.addPreviewOverlays = function(container, pageNum, offset) {
 		
 		container.appendChild(div);
 	});
+
+	// Data Merge Overlays
+	if(window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
+		window.__mergeData.headers.forEach((header, colIndex) => {
+			const cfg = window.__mergeConfig[header];
+			if(!cfg || !cfg.visible) return;
+
+			const pageFilter = cfg.pageFilter || 'all';
+			if (pageNum <= 0) return; // Don't show on empty slots
+			if (pageFilter === 'odd' && pageNum % 2 === 0) return;
+			if (pageFilter === 'even' && pageNum % 2 !== 0) return;
+
+			const startPage = parseInt(cfg.startPage) || 1;
+			const rowIndex = getMergeRowIndex(pageNum, startPage, pageFilter);
+
+			if(rowIndex >= 0 && rowIndex < window.__mergeData.rows.length){
+				const row = window.__mergeData.rows[rowIndex];
+				const text = (row && row[colIndex] !== undefined) ? String(row[colIndex]) : '';
+				const style = (window.__textStyles && cfg.styleId) ? window.__textStyles[cfg.styleId] : null;
+				
+				if(text && style){
+					const x = (parseFloat(cfg.x) || 0) * pxPerMm + offX;
+					const y = (parseFloat(cfg.y) || 0) * pxPerMm + offY;
+					
+					const div = document.createElement('div');
+					div.className = 'data-merge-overlay';
+					div.style.position = 'absolute';
+					div.style.left = x + 'px';
+					div.style.top = y + 'px';
+					if (style.align === 'center') {
+						div.style.transform = 'translateX(-50%)';
+					} else if (style.align === 'right') {
+						div.style.transform = 'translateX(-100%)';
+					}
+					div.style.zIndex = '6';
+					div.style.pointerEvents = 'none';
+					div.textContent = text;
+					
+					const ptSize = parseFloat(style.fontSize) || 12;
+					const pxSize = ptSize * (96/72);
+					div.style.fontSize = pxSize + 'px';
+					
+					const fam = style.fontFamily || 'Helvetica';
+					if (window.__customFonts && window.__customFonts[fam]) {
+						div.style.fontFamily = `"${fam}", sans-serif`;
+					} else if (fam.startsWith('Times')) div.style.fontFamily = '"Times New Roman", serif';
+					else if (fam.startsWith('Courier')) div.style.fontFamily = '"Courier New", monospace';
+					else div.style.fontFamily = 'sans-serif';
+
+					const fStyle = style.fontStyle || 'Normal';
+					
+					if (window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
+						const settings = window.__fontVariationsCache[fam].map[fStyle];
+						const cssSettings = [];
+						for (const [axis, value] of Object.entries(settings)) {
+							cssSettings.push(`'${axis}' ${value}`);
+						}
+						div.style.fontVariationSettings = cssSettings.join(', ');
+					} else {
+						if (fStyle.includes('Bold')) div.style.fontWeight = 'bold';
+						if (fStyle.includes('Italic')) div.style.fontStyle = 'italic';
+					}
+					
+					const c = style.color || [0, 0, 0, 1];
+					div.style.color = toRgb(c[0], c[1], c[2], c[3]);
+					if (style.opacity !== undefined) div.style.opacity = style.opacity;
+					div.style.whiteSpace = 'nowrap';
+
+					container.appendChild(div);
+				}
+			}
+		});
+	}
 };
 
 window.updatePreviewOverlays = function(container, pageNum, offset) {
@@ -137,7 +348,7 @@ window.updatePreviewOverlays = function(container, pageNum, offset) {
 };
 
 // Draw overlays on the PDF page
-window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib, pageNum, offset) {
+window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib, pageNum, offset, slotIndex, pagesToRender) {
     try {
         const { rgb, cmyk } = pdfLib;
 		const ptPerMm = 72 / 25.4;
@@ -151,29 +362,105 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 
 		for (const overlay of window.__overlays) {
 			if (overlay.visible === false) continue;
+			if (['colorbar', 'duplex', 'sigmark'].includes(overlay.type)) continue;
 			const xMm = parseFloat(overlay.x) || 0;
 			const yMm = parseFloat(overlay.y) || 0;
 			const xPt = xMm * ptPerMm;
 			const yPt = yMm * ptPerMm;
 			
-			if (overlay.type === 'numbering') {
+			if (overlay.type === 'numbering' || overlay.type === 'filename') {
 				if (pageNum <= 0) continue;
-				if (!isPageInRange(pageNum, overlay.pageRange)) continue;
-				const fontSize = parseFloat(overlay.fontSize) || 12;
-				const fontName = overlay.font || 'Helvetica';
-				const prefix = overlay.prefix || '';
-				const digits = parseInt(overlay.digits) || 0;
-				const numStr = String(pageNum).padStart(digits, '0');
-				const text = prefix + numStr;
+				
+				let text = '';
+				if (overlay.type === 'numbering') {
+					const start = (typeof overlay.startFrom === 'number') ? overlay.startFrom : 1;
+					let pageIndex = -1;
+					const pageList = getOverlayPageList(overlay);
+					
+					if (pageList) {
+						pageIndex = pageList.indexOf(pageNum);
+					} else if (pageNum > 0 && !overlay.useSpecificPages) {
+						pageIndex = pageNum - 1;
+					}
+
+					if (pageIndex !== -1) {
+						const count = pageIndex + 1;
+						let num = count;
+						num = num + start - 1;
+						const prefix = overlay.prefix || '';
+						const digits = parseInt(overlay.digits) || 0;
+						text = prefix + String(num).padStart(digits, '0');
+					} else continue;
+				} else {
+					if (overlay.allFiles === false && overlay.fileIndex !== undefined) {
+						if (getFileIndexForPage(pageNum) !== overlay.fileIndex) continue;
+					}
+					const rawName = getFileNameForPage(pageNum);
+					text = (overlay.includeExtension !== false) ? rawName : rawName.replace(/\.[^/.]+$/, "");
+				}
+
+				const style = (window.__textStyles && overlay.styleId) ? window.__textStyles[overlay.styleId] : null;
+				let fontSize = 12;
+				let fontName = 'Helvetica';
+				let color = [0,0,0,1];
+				let opacity = 1;
+				let align = 'left';
+
+				if (style) {
+					fontSize = parseFloat(style.fontSize) || 12;
+					fontName = style.fontFamily || 'Helvetica';
+					const fStyle = style.fontStyle || 'Normal';
+					const isCustom = window.__customFonts && window.__customFonts[fontName];
+					
+					if (!isCustom && fontName !== 'Symbol' && fontName !== 'ZapfDingbats') {
+						if (fontName === 'Times') fontName = 'Times-Roman';
+						if (fStyle === 'Bold') {
+							if (fontName === 'Times-Roman') fontName = 'Times-Bold';
+							else fontName += '-Bold';
+						} else if (fStyle === 'Italic') {
+							if (fontName === 'Times-Roman') fontName = 'Times-Italic';
+							else if (fontName === 'Helvetica') fontName += '-Oblique';
+							else if (fontName === 'Courier') fontName += '-Oblique';
+						} else if (fStyle === 'Bold Italic') {
+							if (fontName === 'Times-Roman') fontName = 'Times-BoldItalic';
+							else if (fontName === 'Helvetica') fontName += '-BoldOblique';
+							else if (fontName === 'Courier') fontName += '-BoldOblique';
+						}
+					}
+					color = style.color || [0,0,0,1];
+					if (style.opacity !== undefined) opacity = style.opacity;
+					align = style.align || 'left';
+				}
+				
+				const isCustom = window.__customFonts && window.__customFonts[fontName];
 				
 				// Embed font
 				let font = fontCache.get(fontName);
 				if (!font) {
+					const stdFonts = [
+						'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
+						'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
+						'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
+						'Symbol', 'ZapfDingbats'
+					];
 					try {
-						font = await newPage.doc.embedFont(fontName);
+						if (isCustom) {
+							if (!window.fontkit) {
+								throw new Error("fontkit library is missing. Please include it to use custom fonts.");
+							}
+							font = await newPage.doc.embedFont(window.__customFonts[fontName].slice(0), { subset: true });
+						} else {
+							if (!stdFonts.includes(fontName)) {
+								throw new Error(`Custom font "${fontName}" is not loaded. Please reload it.`);
+							}
+							font = await newPage.doc.embedFont(fontName);
+						}
 						fontCache.set(fontName, font);
 					} catch (e) {
 						console.warn('Font not found, falling back to Helvetica', e);
+						if (isCustom || !stdFonts.includes(fontName)) {
+							alert(`Failed to embed font "${fontName}": ${e.message}\nFalling back to Helvetica.`);
+						}
 						const fallbackName = pdfLib.StandardFonts.Helvetica;
 						font = fontCache.get(fallbackName);
 						if (!font) {
@@ -193,16 +480,25 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 					const trimWidthPt = boxW - offX - offR;
 					drawX = boxX + offX + (trimWidthPt - xPt - textWidth);
 				}
+				else {
+					if (align === 'center') {
+						const width = font.widthOfTextAtSize(text, fontSize);
+						drawX -= width / 2;
+					} else if (align === 'right') {
+						const width = font.widthOfTextAtSize(text, fontSize);
+						drawX -= width;
+					}
+				}
 
 				const drawY = boxY + boxH - offY - yPt - fontSize; // Approx baseline adjustment
 
-				const c = overlay.cmyk || [0, 0, 0, 1];
 				newPage.drawText(text, {
 					x: drawX,
 					y: drawY,
 					size: fontSize,
 					font: font,
-					color: cmyk(c[0], c[1], c[2], c[3]),
+					color: cmyk(color[0], color[1], color[2], color[3]),
+					opacity: opacity
 				});
 
 			} else {
@@ -235,6 +531,109 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 				});
 			}
         }
+
+		// Data Merge Overlays
+		if(window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
+			for(let colIndex = 0; colIndex < window.__mergeData.headers.length; colIndex++){
+				const header = window.__mergeData.headers[colIndex];
+				const cfg = window.__mergeConfig[header];
+				if(!cfg || !cfg.visible) continue;
+
+				const pageFilter = cfg.pageFilter || 'all';
+				if (pageNum <= 0) continue;
+				if (pageFilter === 'odd' && pageNum % 2 === 0) continue;
+				if (pageFilter === 'even' && pageNum % 2 !== 0) continue;
+
+				const startPage = parseInt(cfg.startPage) || 1;
+				const rowIndex = getMergeRowIndex(pageNum, startPage, pageFilter);
+
+				if(rowIndex >= 0 && rowIndex < window.__mergeData.rows.length){
+					const row = window.__mergeData.rows[rowIndex];
+					const text = (row && row[colIndex] !== undefined) ? String(row[colIndex]) : '';
+					const style = (window.__textStyles && cfg.styleId) ? window.__textStyles[cfg.styleId] : null;
+					
+					if(text && style){
+						const xMm = parseFloat(cfg.x) || 0;
+						const yMm = parseFloat(cfg.y) || 0;
+						const xPt = xMm * ptPerMm;
+						const yPt = yMm * ptPerMm;
+						const fontSize = parseFloat(style.fontSize) || 12;
+						
+						let fontName = style.fontFamily || 'Helvetica';
+						const isCustom = window.__customFonts && window.__customFonts[fontName];
+						const fStyle = style.fontStyle || 'Normal';
+						
+						if (!isCustom && fontName !== 'Symbol' && fontName !== 'ZapfDingbats') {
+							if (fontName === 'Times') fontName = 'Times-Roman';
+							if (fStyle === 'Bold') {
+								if (fontName === 'Times-Roman') fontName = 'Times-Bold';
+								else fontName += '-Bold';
+							} else if (fStyle === 'Italic') {
+								if (fontName === 'Times-Roman') fontName = 'Times-Italic';
+								else if (fontName === 'Helvetica') fontName += '-Oblique';
+								else if (fontName === 'Courier') fontName += '-Oblique';
+							} else if (fStyle === 'Bold Italic') {
+								if (fontName === 'Times-Roman') fontName = 'Times-BoldItalic';
+								else if (fontName === 'Helvetica') fontName += '-BoldOblique';
+								else if (fontName === 'Courier') fontName += '-BoldOblique';
+							}
+						}
+
+						let font = fontCache.get(fontName);
+						if (!font) {
+							const stdFonts = [
+								'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
+								'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
+								'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
+								'Symbol', 'ZapfDingbats'
+							];
+							try {
+								if (isCustom) {
+									if (!window.fontkit) {
+										throw new Error("fontkit library is missing. Please include it to use custom fonts.");
+									}
+									font = await newPage.doc.embedFont(window.__customFonts[fontName].slice(0), { subset: true });
+								} else {
+									if (!stdFonts.includes(fontName)) {
+										throw new Error(`Custom font "${fontName}" is not loaded. Please reload it.`);
+									}
+									font = await newPage.doc.embedFont(fontName);
+								}
+								fontCache.set(fontName, font);
+							} catch (e) {
+								console.warn('Font not found, falling back to Helvetica', e);
+								if (isCustom || !stdFonts.includes(fontName)) {
+									alert(`Failed to embed font "${fontName}": ${e.message}\nFalling back to Helvetica.`);
+								}
+								const fallbackName = pdfLib.StandardFonts.Helvetica;
+								font = fontCache.get(fallbackName);
+								if (!font) {
+									font = await newPage.doc.embedFont(fallbackName);
+									fontCache.set(fallbackName, font);
+								}
+							}
+						}
+
+						let drawX = boxX + offX + xPt;
+						const drawY = boxY + boxH - offY - yPt - fontSize;
+						
+						if (style.align === 'center') {
+							const width = font.widthOfTextAtSize(text, fontSize);
+							drawX -= width / 2;
+						} else if (style.align === 'right') {
+							const width = font.widthOfTextAtSize(text, fontSize);
+							drawX -= width;
+						}
+
+						const c = style.color || [0, 0, 0, 1];
+						const opacity = style.opacity !== undefined ? style.opacity : 1;
+
+						newPage.drawText(text, { x: drawX, y: drawY, size: fontSize, font: font, color: cmyk(c[0], c[1], c[2], c[3]), opacity: opacity });
+					}
+				}
+			}
+		}
+
     } catch(e){
 		console.error('Error drawing overlays: ' + e.message);
     }
@@ -249,6 +648,35 @@ window.drawSheetOverlays = function() {
 	if (!sheets.length) return;
 	
 	const pxPerMm = 96 / 25.4;
+
+	// Pre-calculate section config for mixed signature sizes
+	const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+	const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+	const slotsPerSheet = rows * cols;
+	const prVal = document.getElementById('pageRangeInput')?.value || '';
+	const isDuplex = prVal.includes('2sided') || prVal.includes('booklet');
+	const pagesPerSheet = slotsPerSheet * (isDuplex ? 2 : 1);
+	
+	let sectionConfig = null;
+	const nUpRegex = /(\d+)-?up\s*\(([^)]+)\)/gi;
+	const matches = [...prVal.matchAll(nUpRegex)];
+	if (matches.length > 0 && window.parsePageOrder) {
+		sectionConfig = [];
+		let currentSheet = 0;
+		let currentSig = 0;
+		for (const m of matches) {
+			const n = parseInt(m[1], 10);
+			const content = m[2];
+			const slots = window.parsePageOrder(content).length;
+			const sheetsCount = Math.ceil(slots / slotsPerSheet);
+			const sheetsPerSig = Math.ceil(n / pagesPerSheet);
+			const numSigs = Math.ceil(sheetsCount / sheetsPerSig);
+			
+			sectionConfig.push({ start: currentSheet, end: currentSheet + sheetsCount, n: n, startSig: currentSig });
+			currentSheet += sheetsCount;
+			currentSig += numSigs;
+		}
+	}
 
 	sheets.forEach(sheet => {
 		const layer = document.createElement('div');
@@ -344,6 +772,78 @@ window.drawSheetOverlays = function() {
 					layer.appendChild(bubble);
 				});
 			}
+			if (ov.type === 'sigmark') {
+				const w = (parseFloat(ov.width) || 1) * pxPerMm;
+				const h = (parseFloat(ov.height) || 2) * pxPerMm;
+				const step = (parseFloat(ov.step) || 0) * pxPerMm;
+				const offX = (parseFloat(ov.x) || 0) * pxPerMm;
+				const offY = (parseFloat(ov.y) || 0) * pxPerMm;
+				
+				let sigSize = parseInt(ov.sigSize) || 16;
+				const sheetIndex = Array.from(sheets).indexOf(sheet);
+				let relIndex = sheetIndex;
+				let globalSigIndex = 0;
+
+				if (sectionConfig) {
+					const section = sectionConfig.find(s => sheetIndex >= s.start && sheetIndex < s.end);
+					if (section) {
+						sigSize = section.n;
+						relIndex = sheetIndex - section.start;
+						const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+						globalSigIndex = section.startSig + Math.floor(relIndex / sheetsPerSig);
+					}
+				} else {
+					const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+					globalSigIndex = Math.floor(sheetIndex / sheetsPerSig);
+				}
+				
+				const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+				
+				// Place only on first sheet of signature
+				if (relIndex % sheetsPerSig === 0) {
+					let slotX = window.__slotX || 0;
+					if (window.__gridDuplexMirror && sheetIndex % 2 !== 0) {
+						slotX = -slotX;
+					}
+					const slotY = window.__slotY || 0;
+					const slotW = window.__slotW || 0;
+					const slotH = window.__slotH || 0;
+					
+					const sheetW = sheet.clientWidth;
+					const sheetH = sheet.clientHeight;
+					
+					// Calculate Grid Center
+					const gridW = cols * slotW;
+					const gridH = rows * slotH;
+					
+					const gridCenterX = (sheetW / 2) + slotX;
+					const gridCenterY = (sheetH / 2) + slotY;
+
+					// Left edge of 1st slot (Top-Left)
+					const baseX = gridCenterX - (gridW / 2) + slotW;
+					// Middle of 1st slot (Top-Left)
+					const baseY = gridCenterY - (gridH / 2) + (slotH / 2);
+					
+					const toRgb = (c, m, y, k) => {
+						const r = Math.round(255 * (1 - c) * (1 - k));
+						const g = Math.round(255 * (1 - m) * (1 - k));
+						const b = Math.round(255 * (1 - y) * (1 - k));
+						return `rgb(${r},${g},${b})`;
+					};
+					const c = ov.cmyk || [0, 0, 0, 1];
+					
+					const div = document.createElement('div');
+					Object.assign(div.style, {
+						position: 'absolute',
+						width: w + 'px',
+						height: h + 'px',
+						backgroundColor: toRgb(c[0], c[1], c[2], c[3]),
+						left: (baseX - w/2 + offX) + 'px',
+						top: (baseY - h/2 + offY + (globalSigIndex * step)) + 'px'
+					});
+					layer.appendChild(div);
+				}
+			}
 		});
 		sheet.appendChild(layer);
 	});
@@ -354,6 +854,35 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 	const { cmyk } = pdfLib;
 	const pageH = newPage.getHeight();
 	const mmToPt = 72 / 25.4;
+
+	// Pre-calculate section config for mixed signature sizes
+	const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+	const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+	const slotsPerSheet = rows * cols;
+	const prVal = document.getElementById('pageRangeInput')?.value || '';
+	const isDuplex = prVal.includes('2sided') || prVal.includes('booklet');
+	const pagesPerSheet = slotsPerSheet * (isDuplex ? 2 : 1);
+	
+	let sectionConfig = null;
+	const nUpRegex = /(\d+)-?up\s*\(([^)]+)\)/gi;
+	const matches = [...prVal.matchAll(nUpRegex)];
+	if (matches.length > 0 && window.parsePageOrder) {
+		sectionConfig = [];
+		let currentSheet = 0;
+		let currentSig = 0;
+		for (const m of matches) {
+			const n = parseInt(m[1], 10);
+			const content = m[2];
+			const slots = window.parsePageOrder(content).length;
+			const sheetsCount = Math.ceil(slots / slotsPerSheet);
+			const sheetsPerSig = Math.ceil(n / pagesPerSheet);
+			const numSigs = Math.ceil(sheetsCount / sheetsPerSig);
+
+			sectionConfig.push({ start: currentSheet, end: currentSheet + sheetsCount, n: n, startSig: currentSig });
+			currentSheet += sheetsCount;
+			currentSig += numSigs;
+		}
+	}
 
 	window.__overlays.forEach(ov => {
 		if (ov.visible === false) return;
@@ -430,5 +959,70 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 				}
 			});
 		}
+		if (ov.type === 'sigmark') {
+			const w = (parseFloat(ov.width) || 1) * mmToPt;
+			const h = (parseFloat(ov.height) || 2) * mmToPt;
+			const step = (parseFloat(ov.step) || 0) * mmToPt;
+			const offX = (parseFloat(ov.x) || 0) * mmToPt;
+			const offY = (parseFloat(ov.y) || 0) * mmToPt;
+			
+			let sigSize = parseInt(ov.sigSize) || 16;
+			let relIndex = sheetIndex;
+			let globalSigIndex = 0;
+
+			if (sectionConfig) {
+				const section = sectionConfig.find(s => sheetIndex >= s.start && sheetIndex < s.end);
+				if (section) {
+					sigSize = section.n;
+					relIndex = sheetIndex - section.start;
+					const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+					globalSigIndex = section.startSig + Math.floor(relIndex / sheetsPerSig);
+				}
+			} else {
+				const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+				globalSigIndex = Math.floor(sheetIndex / sheetsPerSig);
+			}
+			
+			const sheetsPerSig = Math.ceil(sigSize / pagesPerSheet);
+			if (relIndex % sheetsPerSig === 0) {
+				let slotX = (window.__slotX || 0) * pxToPt;
+				if (window.__gridDuplexMirror && sheetIndex % 2 !== 0) {
+					slotX = -slotX;
+				}
+				const slotY = (window.__slotY || 0) * pxToPt;
+				const slotW = (window.__slotW || 0) * pxToPt;
+				const slotH = (window.__slotH || 0) * pxToPt;
+				
+				// PDF Coords: (0,0) is Bottom-Left
+				const pageW = newPage.getWidth();
+				
+				// Center of sheet in PDF coords
+				const gridCenterX = (pageW / 2) + slotX;
+				const gridCenterY = (pageH / 2) - slotY; // Invert Y for PDF
+				
+				const gridW = cols * slotW;
+				const gridH = rows * slotH;
+
+				// Left edge of 1st slot (Top-Left)
+				const baseX = gridCenterX - (gridW / 2) + slotW;
+				// Middle of 1st slot (Top-Left). Y is up, so Top is gridCenterY + gridH/2.
+				const baseY = gridCenterY + (gridH / 2) - (slotH / 2);
+				
+				// Apply step (downwards in PDF means decreasing Y)
+				const drawY = baseY - h/2 - offY - (globalSigIndex * step);
+				const drawX = baseX - w/2 + offX;
+
+				const c = ov.cmyk || [0, 0, 0, 1];
+
+				newPage.drawRectangle({
+					x: drawX,
+					y: drawY,
+					width: w,
+					height: h,
+					color: cmyk(c[0], c[1], c[2], c[3])
+				});
+			}
+		}
+
 	});
 };

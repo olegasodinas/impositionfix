@@ -59,8 +59,17 @@ window.parsePageOrder = function(input, _ignored, explicitCols) {
 	if (!input || typeof input !== 'string') return [];
 
 	// 1. Context Setup
-	const globalPageCount = window.__pdfDoc ? window.__pdfDoc.numPages : 0;
-	const fileCounts = window.__filePageCounts || (globalPageCount ? [globalPageCount] : []);
+	let globalPageCount = window.__pdfDoc ? window.__pdfDoc.numPages : 0;
+	let fileCounts = (window.__filePageCounts && window.__filePageCounts.length > 0) ? window.__filePageCounts : (globalPageCount ? [globalPageCount] : []);
+
+	// Data Merge Override: If repeating a single page, treat document as having as many pages as data rows
+	if (window.__mergeData && window.__mergeData.rows && window.__mergeSource && window.__mergeSource.mode === 'single') {
+		const dataCount = window.__mergeData.rows.length;
+		if (dataCount > 0) {
+			globalPageCount = dataCount;
+			if (fileCounts.length === 1) fileCounts = [dataCount];
+		}
+	}
 	
 	// Calculate absolute start index for each file
 	const fileOffsets = [0];
@@ -207,6 +216,12 @@ window.parsePageOrder = function(input, _ignored, explicitCols) {
 	const evaluate = (expr, pool, isExplicit) => {
 		if(!expr) return [];
 		
+		// Handle prefixes (f:, p:, sh:) inside expressions
+		if (/^(sh|f|p)([\d\-,]+|last):/i.test(expr)) {
+			const { sourcePages, expression: subExpr, isExplicit: subExplicit } = parsePrefixes(expr);
+			return evaluate(subExpr, sourcePages, subExplicit);
+		}
+
 		// Implicit Grouping for RTL starting lists: -1-5,3,8-4 -> -(1-5,3,8-4)
 		if(expr.startsWith('-') && /^\-\d/.test(expr) && expr.indexOf(',') !== -1){
 			return evaluate(`-(${expr.substring(1)})`, pool, isExplicit);
@@ -279,19 +294,34 @@ window.parsePageOrder = function(input, _ignored, explicitCols) {
 			if(nUpMatch){
 				const n = parseInt(nUpMatch[1], 10);
 				const res = [];
+				
+				const processSig = (chunk, size) => {
+					const c = [...chunk];
+					while(c.length < size) c.push(null);
+					const sigRes = [];
+					for(let k=0; k<size/2; k+=2){
+						const end = size - 1 - k;
+						const start = k;
+						sigRes.push(c[end]);
+						sigRes.push(c[start]);
+						sigRes.push(c[start+1]);
+						sigRes.push(c[end-1]);
+					}
+					return sigRes;
+				};
+
 				// Process in chunks of N
 				for(let i=0; i<innerPages.length; i+=n){
 					const chunk = innerPages.slice(i, i+n);
-					while(chunk.length < n) chunk.push(null);
+					let currentSize = n;
 					
-					for(let k=0; k<n/2; k+=2){
-						const end = n - 1 - k;
-						const start = k;
-						res.push(chunk[end]);
-						res.push(chunk[start]);
-						res.push(chunk[start+1]);
-						res.push(chunk[end-1]);
+					// Automatic calculation for the end
+					if(chunk.length < n && chunk.length > 0){
+						const remainder = chunk.length;
+						currentSize = Math.ceil(remainder / 4) * 4;
 					}
+					
+					res.push(...processSig(chunk, currentSize));
 				}
 				return res;
 			}
@@ -554,6 +584,96 @@ window.parsePageOrder = function(input, _ignored, explicitCols) {
 	}
 
 	return resolvedPages.map(p => (p === null) ? 0 : p);
+};
+
+// Helper to convert absolute page numbers back to range string
+window.pagesToRangeString = function(pages) {
+	if (!pages || pages.length === 0) return "";
+	
+	let globalPageCount = window.__pdfDoc ? window.__pdfDoc.numPages : 0;
+	let fileCounts = (window.__filePageCounts && window.__filePageCounts.length > 0) ? window.__filePageCounts : (globalPageCount ? [globalPageCount] : []);
+
+	const getFileInfo = (absPage) => {
+		if (absPage <= 0) return { f: -1, p: 0 };
+		let countSoFar = 0;
+		for (let i = 0; i < fileCounts.length; i++) {
+			if (absPage <= countSoFar + fileCounts[i]) {
+				return { f: i, p: absPage - countSoFar };
+			}
+			countSoFar += fileCounts[i];
+		}
+		return { f: -1, p: 0 };
+	};
+
+	const tokens = pages.map(getFileInfo);
+	const groups = [];
+	
+	if (tokens.length > 0) {
+		let currentGroup = { f: tokens[0].f, start: tokens[0].p, end: tokens[0].p, count: 1 };
+		
+		for (let i = 1; i < tokens.length; i++) {
+			const t = tokens[i];
+			if (t.f !== -1 && t.f === currentGroup.f && t.p === currentGroup.end + 1) {
+				currentGroup.end = t.p;
+				currentGroup.count++;
+			} else if (t.f === -1 && currentGroup.f === -1) {
+				currentGroup.count++;
+			} else {
+				groups.push(currentGroup);
+				currentGroup = { f: t.f, start: t.p, end: t.p, count: 1 };
+			}
+		}
+		groups.push(currentGroup);
+	}
+
+	return groups.map(g => {
+		if (g.f === -1) {
+			return Array(g.count).fill("0").join(" ");
+		}
+		const prefix = `f${g.f + 1}:`;
+		if (g.start === g.end) return `${prefix}${g.start}`;
+		return `${prefix}${g.start}-${g.end}`;
+	}).join(" ");
+};
+
+// Helper to insert file pages into selected slots
+window.insertPagesIntoRange = function(currentRangeStr, selectedSlots, fileIndex) {
+	const oldPages = window.parsePageOrder(currentRangeStr);
+	const fileCount = (window.__filePageCounts && window.__filePageCounts[fileIndex]) || 0;
+	if (fileCount === 0) return currentRangeStr;
+	
+	let fileOffset = 0;
+	if (window.__filePageCounts) {
+		for(let i=0; i<fileIndex; i++) fileOffset += (window.__filePageCounts[i] || 0);
+	}
+	
+	const newPages = [];
+	for(let i=1; i<=fileCount; i++) newPages.push(fileOffset + i);
+
+	const result = [];
+	const selectedSet = new Set(selectedSlots);
+	let oldIdx = 0;
+	let newIdx = 0;
+	let slotIdx = 0;
+	
+	while(oldIdx < oldPages.length || newIdx < newPages.length) {
+		if (selectedSet.has(slotIdx)) {
+			if (newIdx < newPages.length) {
+				result.push(newPages[newIdx++]);
+			} else {
+				if (oldIdx < oldPages.length) result.push(oldPages[oldIdx++]);
+			}
+		} else {
+			if (oldIdx < oldPages.length) {
+				result.push(oldPages[oldIdx++]);
+			} else if (newIdx < newPages.length) {
+				result.push(newPages[newIdx++]);
+			}
+		}
+		slotIdx++;
+	}
+
+	return window.pagesToRangeString(result);
 };
 
 // Alias for compatibility with pdf-render.js

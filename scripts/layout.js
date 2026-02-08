@@ -74,7 +74,7 @@
 
 			el.style.width = (w ? (w + 'px') : 'auto');
 			el.style.height = (h ? (h + 'px') : 'auto');
-			el.style.overflow = 'hidden';
+			el.style.overflow = 'visible';
 			el.style.minHeight = '0';
 			el.style.marginLeft = -l + 'px';
 			el.style.marginRight = -r + 'px';
@@ -148,6 +148,11 @@
 			container.style.alignContent = 'center';
 			container.style.justifyContent = 'center';
 
+			let sheetX = x;
+			if (window.__gridDuplexMirror && sheetIndex % 2 !== 0) {
+				sheetX = -x;
+			}
+
 			for(let i=0; i<slotsPerSheet; i++){
 				const globalIndex = (sheetIndex * slotsPerSheet) + i;
 				const div = document.createElement('div');
@@ -158,7 +163,7 @@
 				if(h) div.style.minHeight = '0';
 				// Note: Margins are applied in applyLayoutToPreviews, but we set initial here
 				div.style.margin = '0';
-				div.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+				div.style.transform = 'translate(' + sheetX + 'px, ' + y + 'px)';
 				div.style.marginLeft = -l + 'px';
 				div.style.marginRight = -r + 'px';
 				div.style.marginTop = -t + 'px';
@@ -352,19 +357,26 @@
 	};
 
 	// Calculate scale and rotation settings for fitting content
-	window.calculatePageFit = function(w, h, availW, availH, rotation, skewX, skewY){
+	window.calculatePageFit = function(w, h, availW, availH, rotation, skewX, skewY, fitMode){
 		let r = (rotation || 0) % 360;
 		if(r < 0) r += 360;
 		const skX = skewX || 0;
 		const skY = skewY || 0;
 
-		const useSmartFit = !!window.__preferUpscaleNotRotate || !!window.__fillImage || !!window.__stretchImage;
+		// Resolve fitMode if not passed (fallback to globals)
+		if (!fitMode) {
+			if (window.__preferUpscaleNotRotate) fitMode = 'fit';
+			else if (window.__fillImage) fitMode = 'fill';
+			else if (window.__stretchImage) fitMode = 'stretch';
+		}
+
+		const useSmartFit = !!fitMode;
 		let scale;
 		let scaleX = 1;
 		let scaleY = 1;
 
 		if(useSmartFit){
-			if(window.__stretchImage){
+			if(fitMode === 'stretch'){
 				// Stretch logic: Fill X and Y independently
 				// For 90/270 rotation, swap dimensions
 				const rMod = Math.abs(r % 180);
@@ -392,7 +404,7 @@
 
 			const bboxW = Math.abs(m11 * w) + Math.abs(m12 * h);
 			const bboxH = Math.abs(m21 * w) + Math.abs(m22 * h);
-			if(window.__fillImage){
+			if(fitMode === 'fill'){
 				scale = Math.max(availW / bboxW, availH / bboxH);
 			} else {
 				scale = Math.min(availW / bboxW, availH / bboxH);
@@ -402,7 +414,7 @@
 			}
 		} else {
 			// Standard fit: fit based on original dimensions (0 degree), ignoring rotation adjustments
-			if(window.__fillImage){
+			if(fitMode === 'fill'){
 				scale = Math.max(availW / w, availH / h);
 			} else {
 				scale = Math.min(availW / w, availH / h);
@@ -416,7 +428,7 @@
 		if(!isFinite(scaleY) || scaleY <= 0) scaleY = 1;
 
 		const isVertical = (r === 90 || r === 270);
-		const treatAsRotated = isVertical && useSmartFit && Math.abs(skX) < 0.01 && Math.abs(skY) < 0.01 && !window.__stretchImage;
+		const treatAsRotated = isVertical && useSmartFit && Math.abs(skX) < 0.01 && Math.abs(skY) < 0.01 && fitMode !== 'stretch';
 
 		return { scale, scaleX, scaleY, rotation: r, treatAsRotated };
 	};
@@ -438,10 +450,52 @@
 	};
 
 	// Helper to update slot size from UI inputs
-	window.updateSlotSizeFromInputs = function(){
+	window.updateSlotSizeFromInputs = function(source){
 		const wIn = document.getElementById('slotWidthInput');
 		const hIn = document.getElementById('slotHeightInput');
+		const scaleIn = document.getElementById('slotScalePercentInput');
+		const propCheck = document.getElementById('slotProportionalCheckbox');
+		const linkScale = document.getElementById('linkSlotScaleCheckbox')?.checked;
+		const resizeAll = document.getElementById('resizeAllFramesCheckbox')?.checked;
+
 		if(wIn && hIn){
+			if (resizeAll && window.__selectionMode) {
+				window.__selectionMode = false;
+				window.__selectedSlots = [];
+				window.__selectedPages = [];
+				['toolSelectRowBtn', 'toolSelectColBtn', 'toolSelectSlotBtn'].forEach(id => {
+					document.getElementById(id)?.classList.remove('active');
+				});
+				document.querySelectorAll('.preview.selected-frame').forEach(el => el.classList.remove('selected-frame'));
+			}
+
+			const fileW = window.__fileWidthMm;
+			const fileH = window.__fileHeightMm;
+			const isProp = propCheck && propCheck.checked && fileW && fileH;
+
+			if(source === 'scale' && scaleIn && fileW && fileH){
+				const pct = parseFloat(scaleIn.value) || 100;
+				const factor = pct / 100;
+				wIn.value = (fileW * factor).toFixed(2);
+				hIn.value = (fileH * factor).toFixed(2);
+			} else if(isProp){
+				if(source === 'w'){
+					const w = parseFloat(wIn.value) || 0;
+					if(w > 0){
+						const factor = w / fileW;
+						hIn.value = (fileH * factor).toFixed(2);
+						if(scaleIn) scaleIn.value = Math.round(factor * 100);
+					}
+				} else if(source === 'h'){
+					const h = parseFloat(hIn.value) || 0;
+					if(h > 0){
+						const factor = h / fileH;
+						wIn.value = (fileW * factor).toFixed(2);
+						if(scaleIn) scaleIn.value = Math.round(factor * 100);
+					}
+				}
+			}
+
 			if(window.__fileWidthMm){
 				const v = parseFloat(wIn.value);
 				wIn.style.color = (Math.abs(v - window.__fileWidthMm) > 0.05) ? '#ff9f9fff' : '';
@@ -458,11 +512,9 @@
 
 			const pxPerMm = 96 / 25.4;
 			
-			// "Content frame size" inputs always update the global trim size.
-			const baseW = (parseFloat(wIn.value)||0) * pxPerMm;
-			const baseH = (parseFloat(hIn.value)||0) * pxPerMm;
-			window.__trimW = baseW;
-			window.__trimH = baseH;
+			// Inputs represent the desired trim size and expansion
+			const inputTrimW = (parseFloat(wIn.value)||0) * pxPerMm;
+			const inputTrimH = (parseFloat(hIn.value)||0) * pxPerMm;
 
 			// Read expansion inputs.
 			const l = (parseFloat(expL?.value)||0) * pxPerMm;
@@ -470,30 +522,50 @@
 			const t = (parseFloat(expT?.value)||0) * pxPerMm;
 			const b = (parseFloat(expB?.value)||0) * pxPerMm;
 
-			window.__fitToPage = false; // Changing size manually should disable fitting.
+			if (linkScale) {
+				window.__fitToPage = true;
+				if (!window.__selectedSlots || window.__selectedSlots.length === 0) {
+					window.__currentScaleX = 1;
+					window.__currentScaleY = 1;
+				}
+			} else {
+				window.__fitToPage = false;
+			}
 
-			if(window.__selectedSlots && window.__selectedSlots.length > 0){
-				// Selection exists: Apply "Expand" inputs as overrides to selected slots.
+			if(!resizeAll && window.__selectedSlots && window.__selectedSlots.length > 0){
+				// Selection exists: Apply inputs as overrides to selected slots.
 				window.__selectedSlots.forEach(i => {
 					if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
-					// Use the new global trim size as the base for the override.
+					// Use the input trim size + input expansion for the override.
 					window.__slotTransforms[i].layout = {
-						width: window.__trimW + l + r,
-						height: window.__trimH + t + b,
+						width: inputTrimW + l + r,
+						height: inputTrimH + t + b,
 						expandL: l, expandR: r, expandT: t, expandB: b
 					};
+					if (linkScale) {
+						window.__slotTransforms[i].fitToPage = true;
+						window.__slotTransforms[i].scaleX = 1;
+						window.__slotTransforms[i].scaleY = 1;
+					} else {
+						window.__slotTransforms[i].fitToPage = false;
+					}
 				});
-				// Update global preview size for unselected slots, using global expansion values.
-				window.__slotW = window.__trimW + (window.__expandL || 0) + (window.__expandR || 0);
-				window.__slotH = window.__trimH + (window.__expandT || 0) + (window.__expandB || 0);
 			} else {
-				// No selection: Apply "Expand" inputs globally.
+				// No selection: Apply inputs globally.
+				window.__trimW = inputTrimW;
+				window.__trimH = inputTrimH;
 				window.__expandL = l;
 				window.__expandR = r;
 				window.__expandT = t;
 				window.__expandB = b;
 				window.__slotW = window.__trimW + window.__expandL + window.__expandR;
 				window.__slotH = window.__trimH + window.__expandT + window.__expandB;
+
+				if(resizeAll && window.__slotTransforms){
+					Object.keys(window.__slotTransforms).forEach(k => {
+						if(window.__slotTransforms[k].layout) delete window.__slotTransforms[k].layout;
+					});
+				}
 			}
 			// Apply all changes to the DOM.
 			window.applyLayoutToPreviews();
@@ -504,7 +576,7 @@
 			const allowAutoFit = autoGridCheck ? autoGridCheck.checked : (!document.getElementById('layoutSelect') || document.getElementById('layoutSelect').value === 'Default');
 			let rendered = false;
 
-			if(allowAutoFit && window.calculateGridFit && window.__trimW && window.__trimH){
+			if(allowAutoFit && window.calculateGridFit && window.__trimW && window.__trimH && (!window.__selectedSlots || window.__selectedSlots.length === 0)){
 				const fit = window.calculateGridFit(window.__trimW, window.__trimH);
 				const rInput = document.getElementById('rowsInput');
 				const cInput = document.getElementById('colsInput');
@@ -521,9 +593,10 @@
 				}
 			}
 			
-			if(!rendered && (window.__preferUpscaleNotRotate || window.__fillImage || window.__stretchImage) && window.renderPages){
+			if(!rendered && (linkScale || window.__preferUpscaleNotRotate || window.__fillImage || window.__stretchImage) && window.renderPages){
 				window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
 			}
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
 		}
 	};
 
