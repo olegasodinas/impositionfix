@@ -18,11 +18,16 @@ https://mazu-tirazu-spaustuve.eu/impositionfix/
 - Bleed adjust
 - Grid adjust
 - Color adjust for preview export only
-- Numbering with prefixes
+- Numbering with prefixes. Can create a new file from selected pages in list and manipulate it
+- File names for each picture/file
 - Color bars (incomplete)
 - Duplex marks (incomplete)
 - Preview pages as numbers
 - Swapping pages, rows or columns
+- Text Styles
+- Signature mark for n-up
+- Cut & Stack
+- Added Date Merge
 
 ## Commands
 
