@@ -74,6 +74,7 @@
 		<button id="impEvenBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Even Pages"><span class="material-symbols-outlined" style="font-size:16px">flex_wrap</span> Even</button>
 		<button id="impOddBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Odd Pages"><span class="material-symbols-outlined" style="font-size:16px; transform: scaleY(-1)">flex_wrap</span> Odd</button>	
 		<button id="impBottomBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Bottom-Up Fill"><span class="material-symbols-outlined" style="font-size:16px">arrow_upward</span> BT</button>
+		<button id="impStackBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Cut & Stack"><span class="material-icons" style="font-size:16px">layers</span> Stack</button>
 
 		<button id="impBlankBtn" class="toolbox-btn" style="width:auto; padding:4px 8px; font-size:11px; display:flex; gap:4px; align-items:center" title="Add Blank Page (0)"><span class="material-icons" style="font-size:16px">check_box_outline_blank</span> 0</button>
 		<div id="nupContainer" style="position:relative">
@@ -148,7 +149,6 @@
 			<h3>File</h3>
 			<label class="toolbox-btn" for="fileInput" style="margin-bottom:3.5px; width:auto">Select PDF / Image</label>
 			<label id="printBtn" class="toolbox-btn" for="printBtn" style="margin-bottom:4px; width:auto">Generate PDF</label>
-			<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto">Save Preview</label>
 			<input id="fileInput" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none">
 			<div class="toolbox-info" id="fileInfo" style="white-space:pre-wrap">No file selected</div>
 			<div class="toolbox-info" id="boxInfo" style="margin-top:4px; color:#aaa; white-space:pre-wrap"></div>
@@ -218,6 +218,11 @@
 				<input id="autoGridCheck" type="checkbox" checked> Auto Calculate Rows/Cols
 			</label>
 		</div>
+		<div class="toolbox-row">
+			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="showCropMarksCheck" type="checkbox" checked> Show Crop Marks
+			</label>
+		</div>
 		<div class="toolbox-row" style="display:flex; gap:10px">
 			<div style="flex:1">
 				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Rows</label>
@@ -268,11 +273,11 @@
 		</div>
 		<div class="toolbox-row" style="display:flex; gap:10px">
 			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position X (px)</label>
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position X (mm)</label>
 				<input id="boxXInput" type="number" step="10" value="0" class="toolbox-input">
 			</div>
 			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position Y (px)</label>
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position Y (mm)</label>
 				<input id="boxYInput" type="number" step="10" value="0" class="toolbox-input">
 			</div>
 		</div>
@@ -391,11 +396,12 @@
 	<button id="toggleRightToolbox" class="toolbox-toggle-btn right-btn" title="Toggle Right Toolbox"><span class="material-icons">chevron_left</span></button>
 	<div class="toolbox" style="right:0; left:auto; border-right:none; border-left:1px solid #000">
 		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
-			<button id="rtTabTransform" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Transform</button>
-			<button id="rtTabLayout" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Layout</button>
+			<button id="rtTabLayout" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Layout</button>
+			<button id="rtTabTransform" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Transform</button>
+			<button id="rtTabStyles" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Styles</button>
 		</div>
 
-		<div id="rtContentTransform">
+		<div id="rtContentTransform" style="display:none; padding:10px; height:100%; overflow-y:auto">
 			<div class="toolbox-row">
 				<h3>Transform</h3>
 				<div style="font-size:11px; color:#888; margin-bottom:4px; display:flex; gap:5px">
@@ -403,6 +409,9 @@
 					<button id="fillImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fill Image in Slot"><span class="material-icons" style="font-size:16px">aspect_ratio</span>Fill</button>
 					<button id="stretchImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Stretch Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_actual</span>Stretch</button>
 				</div>
+				<label style="display:flex; align-items:center; gap:4px; margin-bottom:8px; cursor:pointer; color:#ccc; font-size:11px">
+					<input id="transformAllPagesCheckbox" type="checkbox"> Transform All Pages
+				</label>
 				<label><span>Rotation</span></label>
 				<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
 				<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
@@ -469,17 +478,38 @@
 			</div>
 		</div>
 
-		<div id="rtContentLayout" style="display:none">
+		<div id="rtContentLayout" style="padding:10px; height:100%; overflow-y:auto">
 		<label style="margin-bottom:-16px;"><h3>Content frame</h3></label>
 		<div class="toolbox-row" style="display:flex; gap:10px">
 			<div style="flex:1">
 				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size X (mm)</label>
-				<input id="slotWidthInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs()">
+				<input id="slotWidthInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('w')">
 			</div>
 			<div style="flex:1">
 				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size Y (mm)</label>
-				<input id="slotHeightInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs()">
+				<input id="slotHeightInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('h')">
 			</div>
+		</div>
+		<div class="toolbox-row" style="display:flex; gap:10px; align-items:flex-end">
+			<div style="width:80px">
+				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Scale %</label>
+				<input id="slotScalePercentInput" type="number" step="1" value="100" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('scale')">
+			</div>
+			<div style="flex:1; padding-bottom:6px">
+				<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+					<input id="slotProportionalCheckbox" type="checkbox" checked> Proportional
+				</label>
+			</div>
+		</div>
+		<div class="toolbox-row">
+			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="linkSlotScaleCheckbox" type="checkbox" checked onchange="window.updateSlotSizeFromInputs()"> Scale Image to Fit
+			</label>
+		</div>
+		<div class="toolbox-row">
+			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="resizeAllFramesCheckbox" type="checkbox" checked onchange="window.updateSlotSizeFromInputs()"> Resize All Frames
+			</label>
 		</div>
 		<div class="toolbox-row" style="display:flex; gap:10px">
 			<div style="flex:1">
@@ -499,6 +529,8 @@
 		</div>
 		</div>
 
+		<div id="rtContentStyles" style="display:none; padding:10px; height:100%; overflow-y:auto"></div>
+
 		<hr>
 		<div class="toolbox-row">
 			<h3>Quality</h3>
@@ -508,6 +540,7 @@
 			<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
 				<input id="nativeCheckbox" type="checkbox" disabled>
 				<span>Preview Original PDF</span>
+			<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto">Save Preview</label>
 			</label>
 		</div>
 	</div>
@@ -545,7 +578,7 @@
 			<div id="infoContent" style="padding:20px; overflow-y:auto; color:#ddd; font-family:sans-serif; line-height:1.5; font-size:13px">
 				<div id="readmeContent">
 					<p>
-					<strong>ImpositionFix™</strong> v0.2.1<br>
+					<strong>ImpositionFix™</strong> v0.3.0<br>
 					© 2026 Olegas Spausdinimas
 						<br><br>
 					This program is made to help with PDF/images imposition tasks 
@@ -594,6 +627,7 @@
 <script src="scripts/data.js"></script>
 <script src="libs/pdf-lib.min.js"></script>
 <script src="scripts/render.js"></script>
+<script src="scripts/styles.js"></script>
 <script src="scripts/ui.js"></script>
 
 
