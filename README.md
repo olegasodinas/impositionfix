@@ -27,7 +27,7 @@ https://mazu-tirazu-spaustuve.eu/impositionfix/
 - Text Styles
 - Signature mark for n-up
 - Cut & Stack
-- Added Date Merge
+- Date Merge
 
 ## Commands
 
