@@ -46,3 +46,4 @@ https://mazu-tirazu-spaustuve.eu/impositionfix/
 <img src="pictures/impositionfix.png">
 <img src="pictures/small_screen.png">
 
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/olegasodinas)
