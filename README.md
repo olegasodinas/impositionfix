@@ -2,10 +2,6 @@
 
 This program is made to help with PDF or images imposition tasks for print production in way using smple command feauture by typing in "Page Range" field. 
 
-You can test and use it here:
-https://mazu-tirazu-spaustuve.eu/impositionfix/
-Or download an use it locally on your disk.
-
 ## Features
 
 - Cropmarks are added acutomatically which position can be adjusted
@@ -58,8 +54,7 @@ npm start        # serves http://localhost:3000  (requires Ghostscript `gs`)
 Then open http://localhost:3000 in your browser. Ghostscript must be installed
 and available on PATH.
 
-If you don't have npm you can download it here: 
-https://nodejs.org
+If you don't have npm you can download it here: https://nodejs.org
 
 ## Commands
 
@@ -73,9 +68,3 @@ https://nodejs.org
 - b(...): Bottom-up layout
 - -(...): Right-to-Left layout
 
-## Screenshots
-
-<img src="pictures/impositionfix.png">
-<img src="pictures/small_screen.png">
-
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/olegasodinas)
