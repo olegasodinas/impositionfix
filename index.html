@@ -42,6 +42,14 @@
 				page-break-after: always;
 				transform: none !important;
 			}
+			/* Force browsers to keep background/fill colors (overlay objects,
+			   color bars, etc.) instead of stripping them as ink-saving.
+			   Borders print by default; backgrounds do not — this fixes
+			   "Save Preview" losing overlay fill colors. */
+		.page, .page * {
+			-webkit-print-color-adjust: exact !important;
+			print-color-adjust: exact !important;
+		}
 		}
 	</style>
 </head>
@@ -144,7 +152,7 @@
 	</div>
 
 	<button id="toggleLeftToolbox" class="toolbox-toggle-btn left-btn" title="Toggle Left Toolbox"><span class="material-icons">chevron_right</span></button>
-	<div class="toolbox" style="left:50px">
+	<div class="toolbox visible" style="left:50px">
 		<div class="toolbox-row">
 			<h3>File</h3>
 			<label class="toolbox-btn" for="fileInput" style="margin-bottom:3.5px; width:auto">Select PDF / Image</label>
@@ -158,8 +166,9 @@
 				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Format</label>
 				<div style="display:flex; gap:5px; margin-bottom:4px">
 					<select id="paperSelect" class="toolbox-input" style="flex:1">
+					<option value="custom">Custom</option>
 					<option value="320,450" selected>SRA3 (320 × 450 mm)</option>
-					<option value="320,460" selected>SRA3+ (320 × 460 mm)</option>
+					<option value="320,460">SRA3+ (320 × 460 mm)</option>
 					<option value="320,225">SRA4 (320 × 225 mm)</option>
 					<option value="320,230">SRA4+ (320 × 230 mm)</option>
 					<option value="640,900">SRA1 (640 × 900 mm)</option>
@@ -189,6 +198,12 @@
 				<div style="display:flex; gap:5px">
 					<button id="orientPortraitBtn" class="toolbox-btn active" style="flex:1; display:flex; justify-content:center; align-items:center" title="Portrait"><span class="material-icons" style="font-size:16px">crop_portrait</span></button>
 					<button id="orientLandscapeBtn" class="toolbox-btn" style="flex:1; display:flex; justify-content:center; align-items:center" title="Landscape"><span class="material-icons" style="font-size:16px">crop_landscape</span></button>
+					<button id="matchPageSizeBtn" class="toolbox-btn" style="flex:1; display:flex; justify-content:center; align-items:center" title="Scale Sheet to Grid"><span class="material-symbols-outlined" style="font-size:16px">pageless</span></button>
+				</div>
+				<div class="toolbox-row" style="margin-top:6px">
+					<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+						<input id="autoGridCheck" type="checkbox" checked> Auto Calculate Rows/Cols
+					</label>
 				</div>
 			</div>
 			<hr>
@@ -205,177 +220,126 @@
 			</div>
 		</div>
 
-		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
-			<button id="ltTabGrid" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Grid</button>
-			<button id="ltTabColor" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Color</button>
-			<button id="ltTabData" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Data</button>
-		</div>
+<details style="margin-top:10px; padding-top:10px; border-top:1px solid #666">
+			<summary style="font-size:11px; color:#ccc; cursor:pointer; user-select:none">Optimize PDF (Ghostscript)</summary>
 
-		<div id="ltContentGrid">
-			<h3>Preview Grid</h3>
-		<div class="toolbox-row">
-			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="autoGridCheck" type="checkbox" checked> Auto Calculate Rows/Cols
-			</label>
-		</div>
-		<div class="toolbox-row">
-			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="showCropMarksCheck" type="checkbox" checked> Show Crop Marks
-			</label>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Rows</label>
-				<input id="rowsInput" type="number" step="1" value="1" min="1" class="toolbox-input">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Cols</label>
-				<input id="colsInput" type="number" step="1" value="2" min="1" class="toolbox-input">
-			</div>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid #666">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset X (mm)</label>
-				<input id="markGapXInput" type="number" step="1" value="1" class="toolbox-input">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset Y (mm)</label>
-				<input id="markGapYInput" type="number" step="1" value="1" class="toolbox-input">
-			</div>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px;">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed X (mm)</label>
-				<input id="cropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed Y (mm)</label>
-				<input id="cropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
-			</div>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px;">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed X (mm)</label>
-				<input id="innerCropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed Y (mm)</label>
-				<input id="innerCropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
-			</div>
-		</div>
-		<div class="toolbox-row">
-			<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner Mark Style</label>
-			<select id="innerCropStyleSelect" class="toolbox-input">
-				<option value="solid">Solid</option>
-				<option value="dashed">Dashed</option>
-				<option value="dotted">Dotted</option>
-			</select>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position X (mm)</label>
-				<input id="boxXInput" type="number" step="10" value="0" class="toolbox-input">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position Y (mm)</label>
-				<input id="boxYInput" type="number" step="10" value="0" class="toolbox-input">
-			</div>
-		</div>
-		</div>
+			<div id="optimizationSettings">
+				<p style="font-size:10px; color:#888; margin:6px 0 8px; line-height:1.3">Optimizes the loaded PDF with Ghostscript and saves it under a different name (<code>name_optimized.pdf</code>).</p>
 
-		<div id="ltContentColor" style="display:none">
-			<h3>Color Correction</h3>
-			<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Preview Profile</label>
-			<div style="display:flex; gap:5px; margin-bottom:4px">
-				<select id="iccProfileSelect" class="toolbox-input" style="flex:1">
-				<option value="srgb" selected>sRGB (Default)</option>
-				<option value="fix-cmyk">Fix CMYK (Boost Saturation)</option>
-				<option value="sim-print">Simulate Print (Matte)</option>
-				<option value="sim-gloss">Simulate Print (Gloss)</option>
-				<option value="adobe-rgb">Adobe RGB (Simulated)</option>
-				<option value="apple-rgb">Apple RGB (Simulated)</option>
-				<option value="grayscale">Grayscale</option>
-				<option value="sepia">Sepia</option>
-				<option value="invert">Invert Colors</option>
-			</select>
-				<button id="saveProfileBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Save Profile">+</button>
-				<button id="deleteProfileBtn" class="toolbox-btn" style="width:auto; padding:0 6px" title="Delete Profile">-</button>
-			</div>
-			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">CIELAB Correction</label>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:10px; color:#888; width:10px">L</span>
-				<input id="labLSlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Lightness">
-			</div>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:10px; color:#888; width:10px">A</span>
-				<input id="labASlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Green - Red">
-			</div>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:10px; color:#888; width:10px">B</span>
-				<input id="labBSlider" type="range" min="-50" max="50" value="0" class="toolbox-slider" style="flex:1" title="Blue - Yellow">
-			</div>
-			<button id="resetLabBtn" class="toolbox-btn" style="font-size:10px; padding:2px; margin-bottom:4px">Reset LAB</button>
-			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">Contrast & Saturation</label>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:10px; color:#888; width:10px">C</span>
-				<input id="contrastSlider" type="range" min="0" max="200" value="100" class="toolbox-slider" style="flex:1" title="Contrast">
-			</div>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:10px; color:#888; width:10px">S</span>
-				<input id="saturationSlider" type="range" min="0" max="200" value="100" class="toolbox-slider" style="flex:1" title="Saturation">
-			</div>
-			<button id="resetContrastSatBtn" class="toolbox-btn" style="font-size:10px; padding:2px; margin-bottom:4px">Reset Contrast/Sat</button>
-			<label style="display:block; font-size:10px; margin-top:8px; margin-bottom:2px; color:#ccc">Curves (RGB)</label>
-			<select id="curveChannelSelect" class="toolbox-input" style="margin-bottom:4px">
-				<option value="master">Master (RGB)</option>
-				<option value="red">Red</option>
-				<option value="green">Green</option>
-				<option value="blue">Blue</option>
-			</select>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-				<span style="font-size:9px; color:#888; width:20px">25%</span>
-				<input id="curveShadowSlider" type="range" min="0" max="100" value="25" class="toolbox-slider" style="flex:1">
-			</div>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-				<span style="font-size:9px; color:#888; width:20px">50%</span>
-				<input id="curveMidSlider" type="range" min="0" max="100" value="50" class="toolbox-slider" style="flex:1">
-			</div>
-			<div style="display:flex; gap:5px; align-items:center; margin-bottom:4px">
-				<span style="font-size:9px; color:#888; width:20px">75%</span>
-				<input id="curveHighSlider" type="range" min="0" max="100" value="75" class="toolbox-slider" style="flex:1">
-			</div>
-			<button id="resetCurvesBtn" class="toolbox-btn" style="font-size:10px; padding:2px">Reset Curves</button>
-			<hr>
-			<div class="toolbox-row" style="margin-top:8px">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Frame Background (CMYK)</label>
-				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-					<span style="font-size:9px; color:#0cc; width:10px">C</span>
-					<input id="bgCSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
+				<div class="toolbox-row">
+					<label>PDF Version</label>
+					<select id="pdfVersion" class="toolbox-input">
+						<option value="1.4">1.4</option>
+						<option value="1.5" selected>1.5</option>
+						<option value="1.6">1.6</option>
+						<option value="1.7">1.7</option>
+						<option value="2.0">2.0</option>
+					</select>
 				</div>
-				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-					<span style="font-size:9px; color:#c0c; width:10px">M</span>
-					<input id="bgMSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
-				</div>
-				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-					<span style="font-size:9px; color:#cc0; width:10px">Y</span>
-					<input id="bgYSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
-				</div>
-				<div style="display:flex; gap:5px; align-items:center; margin-bottom:2px">
-					<span style="font-size:9px; color:#888; width:10px">K</span>
-					<input id="bgKSlider" type="range" min="0" max="100" value="0" class="toolbox-slider" style="flex:1">
-				</div>
-				<label style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:10px; color:#ccc; cursor:pointer">
-					<input id="bgTransparentCheckbox" type="checkbox" checked> Transparent Background
-				</label>
-			</div>
-		</div>
 
-		<div id="ltContentData" style="display:none">
-			<h3>Data Merge</h3>
-			<div class="toolbox-row">
-				<p style="font-size:11px; color:#aaa">Data merge functionality coming soon.</p>
+				<div class="toolbox-row">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">PDF Settings</label>
+					<div style="display:flex; gap:5px; margin-bottom:4px">
+						<select id="pdfSettings" class="toolbox-input" style="flex:1">
+							<option value="" selected>Default</option>
+							<option value="/screen">/screen</option>
+							<option value="/ebook">/ebook</option>
+							<option value="/printer">/printer</option>
+							<option value="/prepress">/prepress</option>
+						</select>
+						<button id="savePdfSettingsPreset" class="toolbox-btn" style="width:auto; padding:0 6px" title="Save Format">+</button>
+					</div>
+				</div>
+
+				<div class="toolbox-row">
+					<label>Color Conversion</label>
+					<select id="colorConversionStrategy" class="toolbox-input">
+						<option value="" selected>None</option>
+						<option value="Gray">Gray</option>
+						<option value="RGB">RGB</option>
+						<option value="CMYK">CMYK</option>
+						<option value="/DeviceGray">DeviceGray</option>
+					</select>
+				</div>
+
+				<div class="toolbox-row">
+					<label>Render Intent</label>
+					<select id="renderIntent" class="toolbox-input">
+						<option value="0">Perceptual (0)</option>
+						<option value="1">Relative Colorimetric (1)</option>
+						<option value="2">Saturation (2)</option>
+						<option value="3">Absolute Colorimetric (3)</option>
+					</select>
+				</div>
+
+				<button id="embedAllFontsCheckbox" class="toolbox-btn" style="margin-bottom:6px; text-align:left; width:100%" type="button" aria-pressed="true">Embed All Fonts</button>
+				<button id="subsetFonts" class="toolbox-btn" style="margin-bottom:6px; text-align:left; width:100%" type="button" aria-pressed="true">Subset Fonts</button>
+				<button id="safer" class="toolbox-btn" style="margin-bottom:6px; text-align:left; width:100%" type="button" aria-pressed="true">Safe Mode (-dSAFER)</button>
+				<button id="quiet" class="toolbox-btn" style="margin-bottom:6px; text-align:left; width:100%" type="button" aria-pressed="true">Quiet (-q)</button>
+
+				<div class="toolbox-row">
+					<label>Color Image Resolution</label>
+					<input id="colorImageResolution" type="text" class="toolbox-input" placeholder="e.g. 150">
+				</div>
+				<div class="toolbox-row">
+					<label>Color Downsample Type</label>
+					<select id="colorImageDownsampleType" class="toolbox-input">
+						<option value="" selected>None</option>
+						<option value="/Bicubic">Bicubic</option>
+						<option value="/Average">Average</option>
+						<option value="/Subsample">Subsample</option>
+					</select>
+				</div>
+				<div class="toolbox-row">
+					<label>Gray Image Resolution</label>
+					<input id="grayImageResolution" type="text" class="toolbox-input" placeholder="e.g. 150">
+				</div>
+				<div class="toolbox-row">
+					<label>Gray Downsample Type</label>
+					<select id="grayImageDownsampleType" class="toolbox-input">
+						<option value="" selected>None</option>
+						<option value="/Bicubic">Bicubic</option>
+						<option value="/Average">Average</option>
+						<option value="/Subsample">Subsample</option>
+					</select>
+				</div>
+				<div class="toolbox-row">
+					<label>Mono Image Resolution</label>
+					<input id="monoImageResolution" type="text" class="toolbox-input" placeholder="e.g. 300">
+				</div>
+				<div class="toolbox-row">
+					<label>Mono Downsample Type</label>
+					<select id="monoImageDownsampleType" class="toolbox-input">
+						<option value="" selected>None</option>
+						<option value="/Bicubic">Bicubic</option>
+						<option value="/Average">Average</option>
+						<option value="/Subsample">Subsample</option>
+					</select>
+				</div>
+
+				<div class="toolbox-row">
+					<label>Output ICC Profile</label>
+					<input id="outputIccProfile" type="text" class="toolbox-input" placeholder="Path to .icc">
+				</div>
+				<div class="toolbox-row">
+					<label>Auto Rotate Pages</label>
+					<input id="autoRotatePages" type="text" class="toolbox-input" placeholder="e.g. /All or /None">
+				</div>
+				<div class="toolbox-row">
+					<label>Extra Arguments</label>
+					<input id="additionalArgs" type="text" class="toolbox-input" placeholder="-dAutoRotatePages=/None ...">
+</div>
+
+				<div style="display:flex; align-items:center; gap:8px; margin-top:8px">
+					<button id="optimizeBtn" class="toolbox-btn" style="width:auto; background:#2e7d32; border-color:#1b5e20">Optimize & Save</button>
+					<button id="optimizeHelpBtn" class="help-btn" title="Show PDF Optimization Help">&#63;</button>
+				</div>
+				<div id="optimizeStatus" style="margin-top:4px; color:#aaa; font-size:11px; white-space:pre-wrap"></div>
+
+				<textarea id="gsCommandPreview" class="toolbox-input" style="margin-top:8px; height:70px; font-family:monospace; font-size:10px; resize:vertical" readonly placeholder="Ghostscript command preview"></textarea>
+				<button id="copyGsCommandBtn" class="toolbox-btn" style="width:auto; margin-top:4px; padding:4px 8px; font-size:11px">Copy Command</button>
 			</div>
-		</div>
+		</details>
 		<div style="margin-top:10px; padding-top:10px; border-top:1px solid #666">
 			<details>
 				<summary style="font-size:11px; color:#ccc; cursor:pointer; user-select:none">Debug Output</summary>
@@ -394,160 +358,263 @@
 	</div>
 
 	<button id="toggleRightToolbox" class="toolbox-toggle-btn right-btn" title="Toggle Right Toolbox"><span class="material-icons">chevron_left</span></button>
-	<div class="toolbox" style="right:0; left:auto; border-right:none; border-left:1px solid #000">
-		<div style="display:flex; border-bottom:1px solid #444; margin-bottom:10px">
-			<button id="rtTabLayout" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Layout</button>
-			<button id="rtTabTransform" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Transform</button>
-			<button id="rtTabStyles" class="toolbox-btn" style="flex:1; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Styles</button>
+	<div class="toolbox visible" style="right:0; left:auto; border-right:none; border-left:1px solid #000; flex-direction:column; overflow:hidden">
+		<!-- Always Visible Transform Toolbar (Fit/Fill/Stretch + Transform All Pages) - above tab group -->
+		<div id="transformToolbar" style="flex-shrink:0; padding:6px; border-bottom:1px solid #444">
+			<div style="font-size:11px; color:#888; margin-bottom:4px; display:flex; gap:5px">
+				<button id="fitImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fit Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_large</span>Fit</button>
+				<button id="fillImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fill Image in Slot"><span class="material-icons" style="font-size:16px">aspect_ratio</span>Fill</button>
+				<button id="stretchImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Stretch Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_actual</span>Stretch</button>
+			</div>
+			<div style="font-size:11px; color:#888; margin-bottom:4px; display:flex; gap:5px">
+				<button id="linkSlotScaleCheckbox" class="toolbox-btn active" aria-pressed="true" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Scale Content With Frame">Scale Content With Frame</button>
+			</div>
+			<label style="display:flex; align-items:center; gap:4px; margin-bottom:0px; cursor:pointer; color:#ccc; font-size:11px">
+				<input id="transformAllPagesCheckbox" type="checkbox"> Transform All Pages
+			</label>
 		</div>
+				<!-- Unified Tab Group (Frame, Transform, Styles, Grid, Data) -->
+		<div class="rtTabGroup" style="flex:1; display:flex; flex-direction:column; min-height:0">
+			<div class="rtTabBar" style="display:flex; border-bottom:1px solid #444; flex-shrink:0; flex-wrap:wrap">
+				<button id="rtTabLayout" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Frame</button>
+				<button id="rtTabTransform" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Transform</button>
+				<button id="rtTabStyles" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Text Styles</button>
+				<button id="rtTabColor" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Swatches</button>
+				<button id="ltTabGrid" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid #00bcd4; border-radius:0; padding:8px 0; color:#fff">Grid</button>
+				<button id="ltTabData" class="toolbox-btn" style="flex:1; min-width:80px; background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:8px 0; color:#888">Data</button>
+			</div>
 
-		<div id="rtContentTransform" style="display:none; padding:10px; height:100%; overflow-y:auto">
+<div class="rtContentArea" style="flex:1; overflow-y:auto; position:relative">
+		<div id="rtContentTransform" class="rtContentTab" style="display:none; padding:0px; overflow-y:auto; flex-direction:column">
 			<div class="toolbox-row">
-				<h3>Transform</h3>
-				<div style="font-size:11px; color:#888; margin-bottom:4px; display:flex; gap:5px">
-					<button id="fitImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fit Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_large</span>Fit</button>
-					<button id="fillImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Fill Image in Slot"><span class="material-icons" style="font-size:16px">aspect_ratio</span>Fill</button>
-					<button id="stretchImageBtn" class="toolbox-btn" style="width:auto; padding:4px 2px; font-size:11px; display:flex; gap:2px; align-items:center; flex:1; justify-content:center" title="Stretch Image to Slot"><span class="material-icons" style="font-size:16px">photo_size_select_actual</span>Stretch</button>
+					<label><span>Rotation</span></label>
+					<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+					<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
+					<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+						<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="rotPageCheck"> Specific Page</label>
+						<input type="text" id="rotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+					</div>
 				</div>
-				<label style="display:flex; align-items:center; gap:4px; margin-bottom:8px; cursor:pointer; color:#ccc; font-size:11px">
-					<input id="transformAllPagesCheckbox" type="checkbox"> Transform All Pages
-				</label>
-				<label><span>Rotation</span></label>
-				<input id="rotationInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-				<input id="rotationSlider" type="range" min="-180" max="180" step="1" value="0" class="toolbox-slider" disabled>
-				<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="rotPageCheck"> Specific Page</label>
-					<input type="text" id="rotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+				<div class="toolbox-row">
+					<label><span>Scale</span> <span id="scaleValue">100%</span></label>
+					<input id="scaleSlider" type="range" min="50" max="200" step="1" value="100" class="toolbox-slider" disabled>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Width (mm)</label>
+						<input id="widthInput" type="number" step="1" class="toolbox-input" disabled>
+					</div>
+					<div style="padding-bottom:4px; display:flex; align-items:center; justify-content:center">
+						<span id="transformProportionalToggle" class="material-icons" style="font-size:16px; cursor:pointer; color:#00bcd4" title="Maintain Aspect Ratio">link</span>
+						<input type="checkbox" id="transformProportionalCheckbox" checked style="display:none">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Height (mm)</label>
+						<input id="heightInput" type="number" step="1" class="toolbox-input" disabled>
+					</div>
+				</div>
+				<div class="toolbox-row" style="margin-top:0px">
+					<div style="margin-top:0px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+						<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="scalePageCheck"> Specific Page</label>
+						<input type="text" id="scalePageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+					</div>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:10px">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position X (mm)</label>
+						<input id="offsetXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+						<input id="offsetXSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position Y (mm)</label>
+						<input id="offsetYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+						<input id="offsetYSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
+					</div>
+				</div>
+				<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="offsetPageCheck"> Specific Page</label>
+					<input type="text" id="offsetPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:10px">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew X (deg)</label>
+						<input id="skewXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+						<input id="skewXSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew Y (deg)</label>
+						<input id="skewYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
+						<input id="skewYSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
+					</div>
+				</div>
+				<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
+					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="slotPageCheck"> Specific Page</label>
+					<input type="text" id="slotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
 				</div>
 			</div>
+		</div>
+
+		<div id="rtContentFrame" class="rtContentTab" style="display:none; padding:0px; flex:1; overflow-y:auto; flex-direction:column">
+				<label style="margin-bottom:4px;"><h3>Content frame</h3></label>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size X (mm)</label>
+						<input id="slotWidthInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('w')">
+					</div>
+					<div style="padding-bottom:4px; display:flex; align-items:center; justify-content:center">
+						<span id="slotProportionalToggle" class="material-icons" style="font-size:16px; cursor:pointer; color:#00bcd4" title="Maintain Aspect Ratio">link</span>
+						<input type="checkbox" id="slotProportionalCheckbox" checked style="display:none">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size Y (mm)</label>
+						<input id="slotHeightInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('h')">
+					</div>
+				</div>
+				<div class="toolbox-row">
+					<div style="width:80px">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Scale %</label>
+						<input id="slotScalePercentInput" type="number" step="1" value="100" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('scale')">
+					</div>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px">
+					<button id="fitImageBtnSlot" class="toolbox-btn" style="flex:1; padding:4px 2px; font-size:11px" title="Fit Image to Slot">Fit</button>
+					<button id="fillImageBtnSlot" class="toolbox-btn" style="flex:1; padding:4px 2px; font-size:11px" title="Fill Image in Slot">Fill</button>
+					<button id="stretchImageBtnSlot" class="toolbox-btn" style="flex:1; padding:4px 2px; font-size:11px" title="Stretch Image to Slot">Stretch</button>
+				</div>
+				<div class="toolbox-row">
+					<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+						<input id="resizeAllFramesCheckbox" type="checkbox" checked onchange="window.updateSlotSizeFromInputs()"> Resize All Frames
+					</label>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:10px">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand LR (mm)</label>
+						<div style="display:flex; gap:2px">
+							<input id="expandLeftInput" type="number" step="1" value="0" class="toolbox-input" placeholder="L" oninput="window.updateSlotSizeFromInputs()">
+							<input id="expandRightInput" type="number" step="1" value="0" class="toolbox-input" placeholder="R" oninput="window.updateSlotSizeFromInputs()">
+						</div>
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand TB (mm)</label>
+						<div style="display:flex; gap:2px">
+							<input id="expandTopInput" type="number" step="1" value="0" class="toolbox-input" placeholder="T" oninput="window.updateSlotSizeFromInputs()">
+							<input id="expandBottomInput" type="number" step="1" value="0" class="toolbox-input" placeholder="B" oninput="window.updateSlotSizeFromInputs()">
+						</div>
+					</div>
+				</div>
+			</div>
+
+<div class="rtContentTab" id="rtContentStyles" style="display:none; padding:0px; overflow-y:auto; flex-direction:column"></div>
+
+				<div class="rtContentTab" id="rtContentColor" style="display:none; padding:10px; overflow-y:auto; flex-direction:column"></div>
+
+			<div class="rtContentTab" id="ltContentGrid" style="display:flex; padding:0px; overflow-y:auto; flex-direction:column">
+				<h3>Preview Grid</h3>
+				<div class="toolbox-row">
+					<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
+						<input id="showCropMarksCheck" type="checkbox" checked> Show Crop Marks
+					</label>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Rows</label>
+						<input id="rowsInput" type="number" step="1" value="1" min="1" class="toolbox-input">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Cols</label>
+						<input id="colsInput" type="number" step="1" value="2" min="1" class="toolbox-input">
+					</div>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end; margin-top:8px; padding-top:8px; border-top:1px solid #666">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset X (mm)</label>
+						<input id="markGapXInput" type="number" step="1" value="1" class="toolbox-input">
+					</div>
+					<div style="padding-bottom:4px; display:flex; align-items:center; justify-content:center">
+						<span id="markGapProportionalToggle" class="material-icons" style="font-size:16px; cursor:pointer; color:#00bcd4" title="Maintain Aspect Ratio">link</span>
+						<input type="checkbox" id="markGapProportionalCheckbox" checked style="display:none">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Offset Y (mm)</label>
+						<input id="markGapYInput" type="number" step="1" value="1" class="toolbox-input">
+					</div>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed X (mm)</label>
+						<input id="cropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
+					</div>
+					<div style="padding-bottom:4px; display:flex; align-items:center; justify-content:center">
+						<span id="cropBleedProportionalToggle" class="material-icons" style="font-size:16px; cursor:pointer; color:#00bcd4" title="Maintain Aspect Ratio">link</span>
+						<input type="checkbox" id="cropBleedProportionalCheckbox" checked style="display:none">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Outer bleed Y (mm)</label>
+						<input id="cropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
+					</div>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:5px; align-items:flex-end">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed X (mm)</label>
+						<input id="innerCropBleedXInput" type="number" step="1" value="2" class="toolbox-input">
+					</div>
+					<div style="padding-bottom:4px; display:flex; align-items:center; justify-content:center">
+						<span id="innerCropBleedProportionalToggle" class="material-icons" style="font-size:16px; cursor:pointer; color:#00bcd4" title="Maintain Aspect Ratio">link</span>
+						<input type="checkbox" id="innerCropBleedProportionalCheckbox" checked style="display:none">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner bleed Y (mm)</label>
+						<input id="innerCropBleedYInput" type="number" step="1" value="2" class="toolbox-input">
+					</div>
+				</div>
+				<div class="toolbox-row">
+					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Inner Mark Style</label>
+					<select id="innerCropStyleSelect" class="toolbox-input">
+						<option value="solid">Solid</option>
+						<option value="dashed">Dashed</option>
+						<option value="dotted">Dotted</option>
+					</select>
+				</div>
+				<div class="toolbox-row" style="display:flex; gap:10px">
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position X (mm)</label>
+						<input id="boxXInput" type="number" step="10" value="0" class="toolbox-input">
+					</div>
+					<div style="flex:1">
+						<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Box position Y (mm)</label>
+						<input id="boxYInput" type="number" step="10" value="0" class="toolbox-input">
+					</div>
+				</div>
+			</div>
+
+			<div class="rtContentTab" id="ltContentData" style="display:none; padding:0px; overflow-y:auto; flex-direction:column">
+				<h3>Data Merge</h3>
+				<div class="toolbox-row">
+					<p style="font-size:11px; color:#aaa">Data merge functionality coming soon.</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Footer (Quality) -->
+		<div style="flex-shrink:0; padding:10px; border-top:1px solid #444">
 			<div class="toolbox-row">
-				<label><span>Scale</span> <span id="scaleValue">100%</span></label>
-				<input id="scaleSlider" type="range" min="50" max="200" step="1" value="100" class="toolbox-slider" disabled>
-			</div>
-			<div class="toolbox-row" style="display:flex; gap:10px">
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Width (mm)</label>
-					<input id="widthInput" type="number" step="1" class="toolbox-input" disabled>
-				</div>
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Height (mm)</label>
-					<input id="heightInput" type="number" step="1" class="toolbox-input" disabled>
-				</div>
-			</div>
-			<div class="toolbox-row" style="margin-top:0px">
-				<label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
-					<input id="unlockRatioCheckbox" type="checkbox" disabled>
-					<span>Unlock aspect ratio</span>
-				</label>
-				<div style="margin-top:4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-					<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="scalePageCheck"> Specific Page</label>
-					<input type="text" id="scalePageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
-				</div>
-			</div>
-			<div class="toolbox-row" style="display:flex; gap:10px">
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position X (mm)</label>
-					<input id="offsetXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-					<input id="offsetXSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
-				</div>
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Position Y (mm)</label>
-					<input id="offsetYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-					<input id="offsetYSlider" type="range" min="-150" max="150" step="1" value="0" class="toolbox-slider" disabled>
-				</div>
-			</div>
-			<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="offsetPageCheck"> Specific Page</label>
-				<input type="text" id="offsetPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
-			</div>
-			<div class="toolbox-row" style="display:flex; gap:10px">
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew X (deg)</label>
-					<input id="skewXInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-					<input id="skewXSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
-				</div>
-				<div style="flex:1">
-					<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Skew Y (deg)</label>
-					<input id="skewYInput" type="number" step="1" value="0" class="toolbox-input" disabled>
-					<input id="skewYSlider" type="range" min="-45" max="45" step="1" value="0" class="toolbox-slider" disabled>
-				</div>
-			</div>
-			<div class="toolbox-row" style="margin-top:-4px; font-size:11px; color:#ccc; display:flex; align-items:center; justify-content:space-between">
-				<label style="display:flex; align-items:center; gap:4px"><input type="checkbox" id="slotPageCheck"> Specific Page</label>
-				<input type="text" id="slotPageNum" placeholder="e.g. 1-3, 5" style="width:80px; display:none" class="toolbox-input">
-			</div>
-		</div>
-
-		<div id="rtContentLayout" style="padding:10px; height:100%; overflow-y:auto">
-		<label style="margin-bottom:-16px;"><h3>Content frame</h3></label>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size X (mm)</label>
-				<input id="slotWidthInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('w')">
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Slot size Y (mm)</label>
-				<input id="slotHeightInput" type="number" step="1" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('h')">
-			</div>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px; align-items:flex-end">
-			<div style="width:80px">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Scale %</label>
-				<input id="slotScalePercentInput" type="number" step="1" value="100" class="toolbox-input" oninput="window.updateSlotSizeFromInputs('scale')">
-			</div>
-			<div style="flex:1; padding-bottom:6px">
-				<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
-					<input id="slotProportionalCheckbox" type="checkbox" checked> Proportional
+				<h3>Quality</h3>
+				<label><span>Raster DPI for preview</span></label>
+				<input id="dpiInput" type="number" min="72" max="600" step="1" value="96" class="toolbox-input" disabled>
+		
+				<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
+					<input id="nativeCheckbox" type="checkbox" disabled>
+					<span>Preview Original PDF</span>
+					<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto; margin-left:10px">Save Preview</label>
 				</label>
 			</div>
-		</div>
-		<div class="toolbox-row">
-			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="linkSlotScaleCheckbox" type="checkbox" checked onchange="window.updateSlotSizeFromInputs()"> Scale Image to Fit
-			</label>
-		</div>
-		<div class="toolbox-row">
-			<label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="resizeAllFramesCheckbox" type="checkbox" checked onchange="window.updateSlotSizeFromInputs()"> Resize All Frames
-			</label>
-		</div>
-		<div class="toolbox-row" style="display:flex; gap:10px">
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand LR (mm)</label>
-				<div style="display:flex; gap:2px">
-					<input id="expandLeftInput" type="number" step="1" value="0" class="toolbox-input" placeholder="L" oninput="window.updateSlotSizeFromInputs()">
-					<input id="expandRightInput" type="number" step="1" value="0" class="toolbox-input" placeholder="R" oninput="window.updateSlotSizeFromInputs()">
-				</div>
-			</div>
-			<div style="flex:1">
-				<label style="display:block; font-size:10px; margin-bottom:2px; color:#ccc">Expand TB (mm)</label>
-				<div style="display:flex; gap:2px">
-					<input id="expandTopInput" type="number" step="1" value="0" class="toolbox-input" placeholder="T" oninput="window.updateSlotSizeFromInputs()">
-					<input id="expandBottomInput" type="number" step="1" value="0" class="toolbox-input" placeholder="B" oninput="window.updateSlotSizeFromInputs()">
-				</div>
-			</div>
-		</div>
-		</div>
-
-		<div id="rtContentStyles" style="display:none; padding:10px; height:100%; overflow-y:auto"></div>
-
-		<hr>
-		<div class="toolbox-row">
-			<h3>Quality</h3>
-			<label><span>Raster DPI for preview</span></label>
-			<input id="dpiInput" type="number" min="72" max="600" step="1" value="96" class="toolbox-input" disabled>
-	
-			<label style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#ccc; font-size:11px">
-				<input id="nativeCheckbox" type="checkbox" disabled>
-				<span>Preview Original PDF</span>
-			<label id="savePreviewBtn" class="toolbox-btn" for="savePreviewBtn" style="margin-bottom:3.5px; width:auto">Save Preview</label>
-			</label>
 		</div>
 	</div>
 	</div>
 	<div id="statusBar" style="height:24px; background:#262626; border-top:1px solid #000; display:flex; align-items:center; padding:0 10px; font-family:sans-serif; font-size:11px; color:#aaa; z-index:100; gap:20px; flex-shrink:0">
 		<span id="statusFileDim">File: -</span>
 		<span id="statusSlotSize">Slot: -</span>
+		<span id="statusProjectName"></span>
 		<span id="statusInfo" style="margin-left:auto"></span>
 	</div>
 	<!-- SVG Filter for LAB Adjustment -->
@@ -578,7 +645,7 @@
 			<div id="infoContent" style="padding:20px; overflow-y:auto; color:#ddd; font-family:sans-serif; line-height:1.5; font-size:13px">
 				<div id="readmeContent">
 					<p>
-					<strong>ImpositionFix™</strong> v0.3.0<br>
+					<strong>ImpositionFix™</strong> v0.4.5<br>
 					© 2026 Olegas Spausdinimas
 						<br><br>
 					This program is made to help with PDF/images imposition tasks 
@@ -586,10 +653,8 @@
 					command feauture by typing in "Page Range" field. Cropmarks are added
 					acutomatically which position can be adjusted.
 						<br><br>
-					The Color tab allows to preview color corrections but not apply them
+					The Preview Color plugin allows to preview color corrections but not apply them
 					to the output PDF yet.
-						<br><br>
-					Data tab is in experimental stage now.
 				</p>
 				</div>
 				<div id="licenseContent" style="display:none">
@@ -620,6 +685,7 @@
 	</div>
 </body>
 <script src="scripts/globals.js"></script>
+<script src="scripts/plugin-registry.js"></script>
 <script src="scripts/layout.js"></script>
 <script src="scripts/transform.js"></script>
 <script src="scripts/crops.js"></script>
@@ -629,6 +695,32 @@
 <script src="scripts/render.js"></script>
 <script src="scripts/styles.js"></script>
 <script src="scripts/ui.js"></script>
-
+<script src="scripts/save.js"></script>
+<script src="scripts/optimize.js"></script>
+<script>
+(async function loadPlugins() {
+    try {
+        const res = await fetch('/api/plugins');
+        if (!res.ok) {
+            console.error('[plugin-loader] /api/plugins returned', res.status, res.statusText);
+            return;
+        }
+        const files = await res.json();
+        console.log('[plugin-loader] Discovered', files.length, 'plugin file(s):', files);
+        if (files.length === 0) {
+            console.warn('[plugin-loader] No .js files found in plugins/ directory');
+        }
+        for (const file of files) {
+            const s = document.createElement('script');
+            s.src = 'plugins/' + file;
+            s.onload = () => console.log('[plugin-loader] Loaded:', file);
+            s.onerror = () => console.error('[plugin-loader] FAILED to load:', file);
+            document.head.appendChild(s);
+        }
+    } catch (e) {
+        console.error('[plugin-loader] Plugin discovery failed:', e);
+    }
+})();
+</script>
 
 </html>
