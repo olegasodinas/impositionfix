@@ -26,6 +26,7 @@ Or download an use it locally on your disk.
 - Preview pages as numbers
 - Swapping pages, rows or columns
 - Text Styles
+- Color Swatches
 - Signature mark for n-up
 - Creep compensation for Booklet and N-up (Data tab). Content is shifted
   within each signature by Direction-anchored monotonic growth.
