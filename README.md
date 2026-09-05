@@ -69,3 +69,4 @@ If you don't have npm you can download it here: https://nodejs.org
 - -(...): Right-to-Left layout
 
 https://ko-fi.com/olegasodinas
+[![Alt text](assets/kofi_logo.svg)](https://ko-fi.com/olegasodinas)
