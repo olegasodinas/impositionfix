@@ -71,4 +71,7 @@ If you don't have npm you can download it here: https://nodejs.org
 - b(...): Bottom-up layout
 - -(...): Right-to-Left layout
 
+![Alt text](pictures/small_screen.png)
+![Alt text](pictures/impositionfix.png)
+
 [![Alt text](assets/kofi_logo.png)](https://ko-fi.com/olegasodinas)
