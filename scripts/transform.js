@@ -86,8 +86,11 @@
 			const slotT = (window.__slotTransforms && window.__slotTransforms[i]) || {};
 			const pageT = (window.__pageTransforms && window.__pageTransforms[pageNum]) || {};
 
-			const fitMode = slotT.fitMode || pageT.fitMode || globalFitMode;
-			const ignoreTransforms = !!fitMode;
+			// If we have manual scale or position overrides, don't fall back to global fit modes
+			const hasManualOverride = (typeof slotT.scaleX === 'number') || (typeof pageT.scaleX === 'number') || (typeof slotT.offsetX === 'number') || (typeof pageT.offsetX === 'number');
+			const fitMode = slotT.fitMode || pageT.fitMode || (hasManualOverride ? null : globalFitMode);
+			const fitToPage = (slotT.fitToPage !== undefined) ? slotT.fitToPage : ((pageT.fitToPage !== undefined) ? pageT.fitToPage : window.__fitToPage);
+			const ignoreTransforms = !!fitMode || fitToPage;
 
 			const r = (typeof slotT.rotation === 'number') ? slotT.rotation : ((typeof pageT.rotation === 'number') ? pageT.rotation : gRot);
 			let sx = (typeof slotT.scaleX === 'number') ? slotT.scaleX : ((typeof pageT.scaleX === 'number') ? pageT.scaleX : gSX);
@@ -143,8 +146,11 @@
 				if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
 				if(typeof scaleX === 'number') window.__slotTransforms[i].scaleX = scaleX;
 				if(typeof scaleY === 'number') window.__slotTransforms[i].scaleY = scaleY;
+				window.__slotTransforms[i].fitToPage = false;
+				delete window.__slotTransforms[i].fitMode;
 			});
 			window.updatePageTransformsOnly();
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
 			return;
 		}
 
@@ -169,6 +175,7 @@
 				if(!window.__pageTransforms[p]) window.__pageTransforms[p] = {};
 				window.__pageTransforms[p].scaleX = scaleX;
 				window.__pageTransforms[p].scaleY = scaleY;
+				window.__pageTransforms[p].fitToPage = false;
 			});
 		} else {
 			if(transformAll){
@@ -179,6 +186,7 @@
 				window.__preferUpscaleNotRotate = false;
 				window.__fillImage = false;
 				window.__stretchImage = false;
+				window.__fitToPage = false;
 			}
 
 			window.__currentScale = scaleX; // Legacy/Reference
@@ -206,6 +214,7 @@
 			slider.value = Math.round(scaleX * 100);
 			if(valEl) valEl.textContent = Math.round(scaleX * 100) + '%';
 		}
+		if(window.syncSelectionToUI) window.syncSelectionToUI();
 	};
 
 	// Adjust content offset (external API)
@@ -216,8 +225,11 @@
 				if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
 				if(typeof x === 'number') window.__slotTransforms[i].offsetX = x;
 				if(typeof y === 'number') window.__slotTransforms[i].offsetY = y;
+				window.__slotTransforms[i].fitToPage = false;
+				delete window.__slotTransforms[i].fitMode;
 			});
 			window.updatePageTransformsOnly();
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
 			return;
 		}
 
@@ -232,11 +244,13 @@
 				if(!window.__pageTransforms[p]) window.__pageTransforms[p] = {};
 				window.__pageTransforms[p].offsetX = x;
 				window.__pageTransforms[p].offsetY = y;
+				window.__pageTransforms[p].fitToPage = false;
 			});
 		} else {
 			if(transformAll){
 				if(window.__slotTransforms) Object.values(window.__slotTransforms).forEach(t => { delete t.offsetX; delete t.offsetY; });
 				if(window.__pageTransforms) Object.values(window.__pageTransforms).forEach(t => { delete t.offsetX; delete t.offsetY; });
+				window.__fitToPage = false;
 			}
 			window.__offsetX = x;
 			window.__offsetY = y;
@@ -250,6 +264,7 @@
 		const sY = window.__currentScaleY || 1;
 		// Update transforms directly
 		window.updatePageTransformsOnly();
+		if(window.syncSelectionToUI) window.syncSelectionToUI();
 	};
 
 	// Adjust slot position (external API)
@@ -324,8 +339,11 @@
 				if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
 				if(x !== undefined) window.__slotTransforms[i].skewX = x;
 				if(y !== undefined) window.__slotTransforms[i].skewY = y;
+				window.__slotTransforms[i].fitToPage = false;
+				delete window.__slotTransforms[i].fitMode;
 			});
 			window.updatePageTransformsOnly();
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
 			return;
 		}
 
@@ -337,11 +355,13 @@
 				if(!window.__pageTransforms[p]) window.__pageTransforms[p] = {};
 				if(x !== undefined) window.__pageTransforms[p].skewX = x;
 				if(y !== undefined) window.__pageTransforms[p].skewY = y;
+				window.__pageTransforms[p].fitToPage = false;
 			});
 		} else {
 			if(transformAll){
 				if(window.__slotTransforms) Object.values(window.__slotTransforms).forEach(t => { delete t.skewX; delete t.skewY; });
 				if(window.__pageTransforms) Object.values(window.__pageTransforms).forEach(t => { delete t.skewX; delete t.skewY; });
+				window.__fitToPage = false;
 			}
 			if(x !== undefined) window.__skewX = x;
 			if(y !== undefined) window.__skewY = y;
@@ -357,6 +377,7 @@
 		} else {
 			window.updatePageTransformsOnly();
 		}
+		if(window.syncSelectionToUI) window.syncSelectionToUI();
 	};
 
 	// Adjust content rotation and trigger render
@@ -369,6 +390,8 @@
 			window.__selectedSlots.forEach(i => {
 				if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
 				window.__slotTransforms[i].rotation = r;
+				window.__slotTransforms[i].fitToPage = false;
+				delete window.__slotTransforms[i].fitMode;
 			});
 			if(window.__preferUpscaleNotRotate || window.__fillImage || window.__stretchImage){
 				window.updatePageTransformsOnly();
@@ -376,6 +399,7 @@
 			} else {
 				window.updatePageTransformsOnly();
 			}
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
 			return;
 		}
 
@@ -384,11 +408,13 @@
 			pages.forEach(p => {
 				if(!window.__pageTransforms[p]) window.__pageTransforms[p] = {};
 				window.__pageTransforms[p].rotation = r;
+				window.__pageTransforms[p].fitToPage = false;
 			});
 		} else {
 			if(transformAll){
 				if(window.__slotTransforms) Object.values(window.__slotTransforms).forEach(t => { delete t.rotation; });
 				if(window.__pageTransforms) Object.values(window.__pageTransforms).forEach(t => { delete t.rotation; });
+				window.__fitToPage = false;
 			}
 			window.__currentRotation = r;
 			if(rotationInput && document.activeElement !== rotationInput) rotationInput.value = String(r);
@@ -400,37 +426,55 @@
 		} else {
 			window.updatePageTransformsOnly();
 		}
+		if(window.syncSelectionToUI) window.syncSelectionToUI();
 	};
 
 	// Apply Fit/Fill/Stretch to selected slots (or all) by calculating and saving specific scales
 	window.applyFitToSelection = async function(mode) {
 		if (!window.__pdfDoc) return;
-		const transformAll = document.getElementById('transformAllPagesCheckbox')?.checked;
+		const transformAllCheck = document.getElementById('transformAllPagesCheckbox');
+		const transformAll = transformAllCheck?.checked;
 
-		if (!transformAll && (!window.__selectedSlots || window.__selectedSlots.length === 0)) return;
+		if (transformAll) {
+			// Global mode toggle: set the flag and clear other conflicting modes
+			if (mode === 'fit') {
+				window.__preferUpscaleNotRotate = !window.__preferUpscaleNotRotate;
+				window.__fillImage = false;
+				window.__stretchImage = false;
+			} else if (mode === 'fill') {
+				window.__fillImage = !window.__fillImage;
+				window.__preferUpscaleNotRotate = false;
+				window.__stretchImage = false;
+			} else if (mode === 'stretch') {
+				window.__stretchImage = !window.__stretchImage;
+				window.__preferUpscaleNotRotate = false;
+				window.__fillImage = false;
+			}
+
+			// Clear all local overrides for scale and fitMode to ensure global mode takes effect
+			if(window.__slotTransforms) Object.values(window.__slotTransforms).forEach(t => { delete t.scaleX; delete t.scaleY; delete t.fitMode; });
+			if(window.__pageTransforms) Object.values(window.__pageTransforms).forEach(t => { delete t.scaleX; delete t.scaleY; delete t.fitMode; });
+
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
+			return;
+		}
+
+		if (!window.__selectedSlots || window.__selectedSlots.length === 0) return;
 		
-		// Disable global modes to ensure we rely on per-cell transforms
-		window.__preferUpscaleNotRotate = false;
-		window.__fillImage = false;
-		window.__stretchImage = false;
-
 		// Update UI buttons
 		['fitImageBtn', 'fillImageBtn', 'stretchImageBtn'].forEach(id => {
-			document.getElementById(id)?.classList.remove('active');
+			const btn = document.getElementById(id);
+			if(btn) {
+				btn.classList.remove('active', 'transform-active', 'fit-active', 'fill-active', 'stretch-active');
+			}
 		});
 
 		const previewEls = document.getElementsByClassName('preview');
 		const pageRangeStr = document.getElementById('pageRangeInput')?.value || '';
 		const cols = parseInt(document.getElementById('colsInput')?.value || 1);
 		const pagesToRender = window.mapPagesToSlots ? window.mapPagesToSlots(pageRangeStr, previewEls.length, cols) : [];
-		
-		let targets = [];
-		if (!transformAll && window.__selectedSlots && window.__selectedSlots.length > 0) {
-			targets = window.__selectedSlots;
-		} else {
-			// All slots
-			targets = Array.from({length: previewEls.length}, (_, i) => i);
-		}
+		const targets = window.__selectedSlots;
 
 		for (const i of targets) {
 			if (i >= pagesToRender.length) continue;
@@ -452,7 +496,7 @@
 			const availH = Math.max(h - inset.v, 1);
 
 			let pdfPageNum = pageNum;
-			if (window.__mergeSource && window.__mergeSource.mode === 'single' && pageNum > 0) {
+			if (window.__mergeEnabled && window.__mergeSource && window.__mergeSource.mode === 'single' && pageNum > 0) {
 				pdfPageNum = parseInt(window.__mergeSource.page) || 1;
 			}
 			if (pdfPageNum > window.__pdfDoc.numPages) pdfPageNum = 1;

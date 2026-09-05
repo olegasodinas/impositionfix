@@ -20,8 +20,31 @@
 	// Helper to check if a file is an image
 	const isImage = (f) => f && (f.type && (f.type.startsWith('image/') || f.name.match(/\.(jpg|jpeg|png)$/i)));
 
+	// Helper to reset page boxes to MediaBox to ensure full content visibility
+	const resetPageBoxes = (page) => {
+		const mediaBox = page.getMediaBox();
+		console.log('Resetting page boxes to MediaBox:', mediaBox);
+		page.setCropBox(mediaBox.x, mediaBox.y, mediaBox.width, mediaBox.height);
+		page.setTrimBox(mediaBox.x, mediaBox.y, mediaBox.width, mediaBox.height);
+		page.setBleedBox(mediaBox.x, mediaBox.y, mediaBox.width, mediaBox.height);
+		page.setArtBox(mediaBox.x, mediaBox.y, mediaBox.width, mediaBox.height);
+	};
+
+	const getFileBuffer = async (file) => {
+		if (!file) throw new Error('No file provided');
+		if (typeof file.arrayBuffer === 'function') {
+			return await file.arrayBuffer();
+		}
+		if (file.url) {
+			const res = await fetch(file.url);
+			if (!res.ok) throw new Error(`Failed to fetch file from URL: ${file.url}`);
+			return await res.arrayBuffer();
+		}
+		throw new Error(`Cannot read file: ${file.name || 'unknown'}`);
+	};
+
 	// renderPages: renders PDF pages into preview according to rotation and scale
-	window.renderPages = function(rotation = 0, scale = 1, offset = null, pageIndex = null){
+	window.renderPages = async function(rotation = 0, scale = 1, offset = null, pageIndex = null){
 		// Increment render ID to invalidate previous async renders
 		window.__renderId = (window.__renderId || 0) + 1;
 
@@ -36,7 +59,7 @@
 		if(!window.__pdfDoc) return;
 		let numPages = window.__pdfDoc.numPages;
 		// If Data Merge Repeat Mode is active, extend the logical page count
-		if (window.__mergeData && window.__mergeData.rows && window.__mergeSource && window.__mergeSource.mode === 'single') {
+		if (window.__mergeEnabled && window.__mergeData && window.__mergeData.rows && window.__mergeSource && window.__mergeSource.mode === 'single') {
 			numPages = Math.max(numPages, window.__mergeData.rows.length);
 		}
 		const previewEls = document.getElementsByClassName('preview');
@@ -50,19 +73,29 @@
 
 		const pageRangeStr = (typeof pageRangeInput !== 'undefined' && pageRangeInput) ? pageRangeInput.value : '';
 		const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+		const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+		const slotsPerSheet = Math.max(1, rows * cols);
 		const pagesToRender = (window.mapPagesToSlots && window.mapPagesToSlots(pageRangeStr, previewEls.length, cols)) || [];
 
-		const renderPromises = [];
-		for(let i=0; i<previewEls.length; i++){
+		const renderSlot = async (i) => {
+			if(window.__renderId !== currentRenderId) return;
 			const targetEl = previewEls[i];
+			if(!targetEl) return;
 			const rawPageNum = (i < pagesToRender.length) ? pagesToRender[i] : 0;
 			const pageNum = (rawPageNum < 0) ? 0 : rawPageNum;
 			const logicalIndex = (rawPageNum < 0) ? -rawPageNum : null;
+			const renderCtx = { slotIndex: i, pageIndex: pageNum, rotation, scale, offset };
+			for (const fn of window.impositionfix._hooks.beforeRender) {
+				try { fn(renderCtx); } catch(e) { console.error('Plugin hook error (beforeRender):', e); }
+			}
+			// Creep compensation (Data tab): shifts page CONTENT, not the slot frame.
+			// Applied like the expansion offsets — independent of fit modes/transforms.
+			const creepOffsetPx = ((typeof window.getCreepOffsetMm === 'function') ? (parseFloat(window.getCreepOffsetMm(i)) || 0) : 0) * (96 / 25.4);
 
 			if(pageNum > numPages || (pageNum < 1 && (pageNum !== 0 || !window.__showPageNumbers))) {
 				targetEl.dataset.pageNum = '';
 				targetEl.innerHTML = '';
-				continue;
+				return;
 			}
 
 			// Check for page-specific overrides
@@ -74,12 +107,15 @@
 			const fitToPage = (slotOverrides.fitToPage !== undefined) ? slotOverrides.fitToPage : ((pageOverrides.fitToPage !== undefined) ? pageOverrides.fitToPage : window.__fitToPage);
 
 			let fitMode = slotOverrides.fitMode || pageOverrides.fitMode;
-			if (!fitMode) {
+			
+			// If we have manual scale overrides, don't fall back to global fit modes
+			const hasManualScale = (typeof slotOverrides.scaleX === 'number') || (typeof pageOverrides.scaleX === 'number');
+			if (!fitMode && !hasManualScale) {
 				if (window.__preferUpscaleNotRotate) fitMode = 'fit';
 				else if (window.__fillImage) fitMode = 'fill';
 				else if (window.__stretchImage) fitMode = 'stretch';
 			}
-			const ignoreTransforms = !!fitMode;
+			const ignoreTransforms = !!fitMode || fitToPage;
 			
 			let globalSX = (typeof scale === 'object') ? scale.x : scale;
 			let globalSY = (typeof scale === 'object') ? scale.y : scale;
@@ -94,9 +130,17 @@
 			
 			let effOffsetX = (typeof slotOverrides.offsetX === 'number') ? slotOverrides.offsetX : ((typeof pageOverrides.offsetX === 'number') ? pageOverrides.offsetX : (offset && typeof offset.x === 'number' ? offset.x : (window.__offsetX || 0)));
 			let effOffsetY = (typeof slotOverrides.offsetY === 'number') ? slotOverrides.offsetY : ((typeof pageOverrides.offsetY === 'number') ? pageOverrides.offsetY : (offset && typeof offset.y === 'number' ? offset.y : (window.__offsetY || 0)));
+			// Creep compensation (Data tab): shifts page content, not the slot frame — same mechanics as Position X
+			effOffsetX += ((typeof window.getCreepOffsetMm === 'function') ? (parseFloat(window.getCreepOffsetMm(i)) || 0) : 0) * (96 / 25.4);
 			if(ignoreTransforms) { effOffsetX = 0; effOffsetY = 0; }
 
-			const effSlotX = (typeof slotOverrides.slotX === 'number') ? slotOverrides.slotX : ((typeof pageOverrides.slotX === 'number') ? pageOverrides.slotX : (window.__slotX || 0));
+			let globalSlotX = window.__slotX || 0;
+			if (window.__gridDuplexMirror) {
+				const sheetIndex = Math.floor(i / slotsPerSheet);
+				if (sheetIndex % 2 !== 0) globalSlotX = -globalSlotX;
+			}
+
+			const effSlotX = (typeof slotOverrides.slotX === 'number') ? slotOverrides.slotX : ((typeof pageOverrides.slotX === 'number') ? pageOverrides.slotX : globalSlotX);
 			const effSlotY = (typeof slotOverrides.slotY === 'number') ? slotOverrides.slotY : ((typeof pageOverrides.slotY === 'number') ? pageOverrides.slotY : (window.__slotY || 0));
 
 			const layout = slotOverrides.layout || pageOverrides.layout || {};
@@ -113,7 +157,7 @@
 			}
 			const pagePromise = (pdfPageNum > 0 && pdfPageNum <= window.__pdfDoc.numPages) ? window.__pdfDoc.getPage(pdfPageNum) : Promise.resolve(null);
 
-			const p = pagePromise.then(page=>{
+			await pagePromise.then(page=>{
 					if(window.__renderId !== currentRenderId) return;
 
 					// DPI scale increases raster resolution but should not change CSS display size
@@ -133,11 +177,17 @@
 						const orig = page.getViewport({ scale:1, rotation:0 });
 						origW = orig.width;
 						origH = orig.height;
-						let fit;
-						const usingSmartFit = (window.calculatePageFit && (ignoreTransforms || (fitToPage !== false && globalSX === 1 && globalSY === 1)));
+						let fit = {};
+						const usingSmartFit = (window.calculatePageFit && ignoreTransforms);
 						if(usingSmartFit){
-							fit = window.calculatePageFit(orig.width, orig.height, currentAvailW, currentAvailH, effRotation, effSkewX, effSkewY, fitMode);
-							window.__lastFitScale = fit.scale;
+							const proportionalScale = slotOverrides.proportionalScale;
+							if (proportionalScale) {
+								fit = { scale: proportionalScale, scaleX: proportionalScale, scaleY: proportionalScale, rotation: effRotation, treatAsRotated: false };
+				window.__lastFitScale = proportionalScale;
+			} else {
+				fit = window.calculatePageFit(orig.width, orig.height, currentAvailW, currentAvailH, effRotation, effSkewX, effSkewY, fitMode);
+				window.__lastFitScale = fit.scale;
+			}
 						} else {
 							const nativeScale = 96 / 72;
 							fit = { scale: (fitToPage === false) ? nativeScale : (window.__lastFitScale || nativeScale), rotation: effRotation, treatAsRotated: false };
@@ -306,7 +356,7 @@
 						const expandOffsetX = (l - r_exp) / 2;
 						const expandOffsetY = (top - bot) / 2;
 
-						if(window.applyPageTransform) window.applyPageTransform(pageContainer, effOffsetX + expandOffsetX, effOffsetY + expandOffsetY, appliedRotation, effSX, effSY, effSkewX, effSkewY);
+						if(window.applyPageTransform) window.applyPageTransform(pageContainer, effOffsetX + expandOffsetX + (window.__creepWithFrame ? 0 : creepOffsetPx), effOffsetY + expandOffsetY, appliedRotation, effSX, effSY, effSkewX, effSkewY);
 
 						// Add content (Directly append renderEl)
 						renderEl.style.transform = '';
@@ -316,26 +366,46 @@
 						wrap.appendChild(clipper);
 
 						// Add Overlays (e.g. purple square)
-						if(window.addPreviewOverlays) window.addPreviewOverlays(wrap, pageNum, {x: l, y: top, r: r_exp}, i, pagesToRender);
+						if(window.addPreviewOverlays) window.addPreviewOverlays(wrap, pageNum, {x: l, y: top, r: r_exp, b: bot, w: w, h: h}, i, pagesToRender);
 
 						targetEl.dataset.pageNum = pageNum;
 						targetEl.innerHTML = ''; // Clear old content only when new content is ready
 						targetEl.appendChild(wrap);
-						targetEl.style.transform = 'translate(' + effSlotX + 'px, ' + effSlotY + 'px)';
+						targetEl.style.transform = 'translate(' + (effSlotX + (window.__creepWithFrame ? creepOffsetPx : 0)) + 'px, ' + effSlotY + 'px)';
 					}).catch(err=>{ console.error('Error rendering page', pageNum, err); });
 			}).catch(err=>{ console.error('Error getting page', pageNum, err); });
-			renderPromises.push(p);
-		}
-		return Promise.all(renderPromises).then(()=>{
+
+			const afterRenderCtx = { slotIndex: i, pageIndex: pageNum, rotation, scale, offset };
+			for (const fn of window.impositionfix._hooks.afterRender) {
+				try { fn(afterRenderCtx); } catch(e) { console.error('Plugin hook error (afterRender):', e); }
+			}
+		};
+
+		// Execute sequentially (or with low concurrency) to save memory
+		const queue = Array.from({length: previewEls.length}, (_, k) => k);
+		const runWorker = async () => {
+			while(queue.length > 0 && window.__renderId === currentRenderId){
+				const i = queue.shift();
+				await renderSlot(i);
+			}
+		};
+		const concurrency = 2;
+		const workers = Array.from({length: concurrency}, () => runWorker());
+
+		return Promise.all(workers).then(()=>{
+			if(window.__renderId !== currentRenderId) return;
 			if(window.drawSheetCropMarks) window.drawSheetCropMarks();
 			if(window.drawSheetOverlays) window.drawSheetOverlays();
+			if(window.updateCreepStatus) window.updateCreepStatus();
+			window.__proportionalScale = null;
 		});
 	};
 
 	// openPdfFile: accepts File object or URL string
-	window.openPdfFile = async function(inputFileOrUrl, keepStructure = false){
+	window.openPdfFile = async function(inputFileOrUrl, keepStructure = false, append = false){
 		if(!inputFileOrUrl) return;
 		
+		const oldFileCount = (append && window.__importedFiles) ? window.__importedFiles.length : 0;
 		const fixCheckbox = document.getElementById('fixPdfCheckbox');
 		const shouldFix = fixCheckbox && fixCheckbox.checked;
 		let wasFixed = false;
@@ -378,6 +448,18 @@
 					g.name = g.files.length > 1 ? `Images (${g.files.length})` : g.files[0].name;
 				}
 			});
+
+			if (append && window.__importedFiles) {
+				groupedFiles = window.__importedFiles.concat(groupedFiles);
+			}
+		}
+
+		if(keepStructure && window.__importedFiles && window.__filePageCounts){
+			window.__importedFiles.forEach((f, i) => {
+				if(f.dummy && typeof f.pageCount !== 'number' && window.__filePageCounts[i] !== undefined){
+					f.pageCount = window.__filePageCounts[i];
+				}
+			});
 		}
 
 		let url;
@@ -389,11 +471,11 @@
 			window.__importedFiles = groupedFiles;
 			window.__fileNames = groupedFiles.map(f => f.name);
 		} else if(typeof inputFileOrUrl === 'string'){
-			window.__importedFiles = [];
+			window.__importedFiles = [{ name: inputFileOrUrl.split('/').pop(), url: inputFileOrUrl, type: 'application/pdf' }];
 			window.__fileNames = [inputFileOrUrl.split('/').pop()];
 		}
 
-		const needsConversion = keepStructure || (rawFiles.length > 0 && (rawFiles.length > 1 || rawFiles.some(isImage)));
+		const needsConversion = keepStructure || append || (rawFiles.length > 0 && (rawFiles.length > 1 || rawFiles.some(isImage)));
 
 		// If multiple files are provided or images need conversion, merge/convert them
 		if(needsConversion && window.PDFLib){
@@ -407,11 +489,26 @@
 						counts.push(0);
 						continue;
 					}
+					if(item.dummy){
+						const c = item.pageCount || 0;
+						counts.push(c);
+						if(c > 0){
+							const w = (window.__fileWidthMm || 210) * 72 / 25.4;
+							const h = (window.__fileHeightMm || 297) * 72 / 25.4;
+							for(let k=0; k<c; k++) newDoc.addPage([w, h]);
+						}
+						continue;
+					}
 					if(item.type === 'group'){
 						let groupCount = 0;
 						const validFiles = [];
-						for(let file of item.files){
-							const buffer = await file.arrayBuffer();
+                        if (!item.pageOrder) item.pageOrder = Array.from({length: item.files.length}, (_, i) => i);
+                        const indices = item.pageOrder.filter(idx => !item.hiddenPages || !item.hiddenPages.has(idx));
+
+						for(let idx of indices){
+                            const file = item.files[idx];
+                            if (!file) continue;
+				const buffer = await getFileBuffer(file);
 						// --- DOWNSAMPLE FOR PREVIEW ---
 						const MAX_PREVIEW_DIM = 2000;
 						const img = new Image();
@@ -459,13 +556,20 @@
 						counts.push(groupCount);
 					} else {
 						const file = item;
-						const buffer = await file.arrayBuffer();
+							const buffer = await getFileBuffer(file);
 						try {
 							const srcDoc = await PDFDocument.load(buffer);
 							const pageCount = srcDoc.getPageCount();
-							counts.push(pageCount);
-							const pages = await newDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-							pages.forEach(p => newDoc.addPage(p));
+                            if (!item.pageOrder || item.pageOrder.length === 0) {
+                                item.pageOrder = srcDoc.getPageIndices();
+                            }
+                            const indicesToCopy = item.pageOrder.filter(idx => !item.hiddenPages || !item.hiddenPages.has(idx));
+							counts.push(indicesToCopy.length);
+							const pages = await newDoc.copyPages(srcDoc, indicesToCopy);
+							pages.forEach(p => {
+								resetPageBoxes(p);
+								newDoc.addPage(p);
+							});
 						} catch(e){
 							console.error('Error loading PDF part', e);
 							counts.push(0);
@@ -480,11 +584,11 @@
 				url = URL.createObjectURL(blob);
 				window.__lastObjectURL = url;
 
-				// Update Page Range Input with syntax: 1:(1-12) 2:(1-28)
-				if(typeof pageRangeInput !== 'undefined' && pageRangeInput){
-					const parts = counts.map((count, idx) => `f${idx+1}:(1-${count})`);
-					pageRangeInput.value = parts.join(' ');
-				}
+			// Update Page Range Input with syntax: 1:(1-12) 2:(1-28)
+			if(typeof pageRangeInput !== 'undefined' && pageRangeInput && !append && !window.__preservePageRange){
+				const parts = counts.map((count, idx) => `f${idx+1}:(1-${count})`).filter(p => !p.endsWith(':()'));
+				pageRangeInput.value = parts.join(' ');
+			}
 				
 				// Update info text
 				const infoEl = document.getElementById('fileInfo');
@@ -494,14 +598,14 @@
 
 			} catch(e) {
 				console.error('Error merging/converting files', e);
-				if(rawFiles.length === 1 && !isImage(rawFiles[0])) originalBuffer = await rawFiles[0].arrayBuffer(); // Fallback
+				if(rawFiles.length === 1 && !isImage(rawFiles[0])) originalBuffer = await getFileBuffer(rawFiles[0]); // Fallback
 			}
 		} else if(typeof inputFileOrUrl === 'string'){
 			url = inputFileOrUrl;
 			if(shouldFix) originalBuffer = await fetch(url).then(res => res.arrayBuffer());
 		} else if(rawFiles.length === 1 && !url){
 			// Single file fallback if merge logic wasn't used
-			if(shouldFix) originalBuffer = await rawFiles[0].arrayBuffer();
+			if(shouldFix) originalBuffer = await getFileBuffer(rawFiles[0]);
 			else {
 				if(window.__lastObjectURL){ try{ URL.revokeObjectURL(window.__lastObjectURL) }catch(e){} window.__lastObjectURL = null }
 				url = URL.createObjectURL(rawFiles[0]);
@@ -523,36 +627,45 @@
 				for(let i=0; i<pages.length; i++){
 					const srcPage = pages[i];
 					const embedded = embeddedPages[i];
-					const { width, height } = srcPage.getSize();
+					const { width: mediaW, height: mediaH } = srcPage.getSize();
+					
+					// Detect the actual design area (TrimBox is preferred for Canva)
+					const trim = srcPage.getTrimBox();
+					const crop = srcPage.getCropBox();
+					const useTrim = trim && trim.width > 0 && trim.height > 0 && (trim.width < mediaW || trim.height < mediaH);
+					const activeBox = useTrim ? trim : crop;
+					
 					const rotAngle = srcPage.getRotation().angle;
 					const rotation = (rotAngle % 360 + 360) % 360;
 
 					if(rotation === 0){
-						const page = newDoc.addPage([width, height]);
-						page.drawPage(embedded, { x: 0, y: 0, width, height, rotate: degrees(0) });
+						// Create page at design size and shift content to align origin
+						const page = newDoc.addPage([activeBox.width, activeBox.height]);
+						page.drawPage(embedded, { x: -activeBox.x, y: -activeBox.y, width: mediaW, height: mediaH, rotate: degrees(0) });
 					} else {
 						modified = true;
-						let newWidth = width;
-						let newHeight = height;
+						let newWidth = activeBox.width;
+						let newHeight = activeBox.height;
 						let drawOptions = {};
 
 						if(rotation === 90){
-							newWidth = height;
-							newHeight = width;
-							drawOptions = { x: 0, y: newHeight, rotate: degrees(90) };
+							newWidth = activeBox.height;
+							newHeight = activeBox.width;
+							// Offset calculation: align the design box corner after rotation
+							drawOptions = { x: -activeBox.y, y: activeBox.x + activeBox.width, rotate: degrees(90) };
 						} else if(rotation === 180){
-							drawOptions = { x: newWidth, y: newHeight, rotate: degrees(180) };
+							drawOptions = { x: activeBox.x + activeBox.width, y: activeBox.y + activeBox.height, rotate: degrees(180) };
 						} else if(rotation === 270){
-							newWidth = height;
-							newHeight = width;
-							drawOptions = { x: newWidth, y: 0, rotate: degrees(270) };
+							newWidth = activeBox.height;
+							newHeight = activeBox.width;
+							drawOptions = { x: activeBox.y + activeBox.height, y: -activeBox.x, rotate: degrees(270) };
 						}
 
 						const page = newDoc.addPage([newWidth, newHeight]);
 						page.drawPage(embedded, {
 							...drawOptions,
-							width: width,
-							height: height
+							width: mediaW,
+							height: mediaH
 						});
 					}
 				}
@@ -613,7 +726,7 @@
 				}
 			}
 			// Update page range input
-			if(typeof pageRangeInput !== 'undefined' && pageRangeInput && isSingleFile){
+			if(typeof pageRangeInput !== 'undefined' && pageRangeInput && isSingleFile && !window.__preservePageRange){
 				pageRangeInput.value = (doc.numPages > 1) ? ('1-' + doc.numPages) : '1';
 			}
 			// 1. Get file info (dimensions, color profile, trimbox, bleedbox, etc.)
@@ -635,7 +748,7 @@
 			}
 
 			// 2. Reset scale and rotation
-			if (!keepStructure) {
+			if (!keepStructure && !append) {
 				window.__currentScale = 1;
 				window.__currentScaleX = 1;
 				window.__currentScaleY = 1;
@@ -646,12 +759,13 @@
 				window.__skewY = 0;
 				window.__previewProfileFilter = '';
 				window.__fitToPage = true;
-				if(window.__overlays){
-					window.__overlays.forEach(ov => {
-						if(ov.type !== 'duplex' && ov.type !== 'colorbar') ov.visible = false;
-					});
-					if(window.renderOverlayInputs) window.renderOverlayInputs();
-				}
+			if(window.__overlays){
+				window.__overlays.forEach(ov => {
+					if(ov._pluginName) return;
+					if(ov.type !== 'duplex' && ov.type !== 'colorbar') ov.visible = false;
+				});
+				if(window.renderOverlayInputs) window.renderOverlayInputs();
+			}
 				const iccSelect = document.getElementById('iccProfileSelect');
 				if(iccSelect){
 					iccSelect.value = '';
@@ -660,8 +774,7 @@
 				if(scaleSlider){ scaleSlider.value = '100'; scaleSlider.disabled = false; }
 				if(rotationInput){ rotationInput.value = '0'; rotationInput.disabled = false; }
 				if(rotationSlider){ rotationSlider.value = '0'; rotationSlider.disabled = false; }
-				if(fitImageBtn){ fitImageBtn.classList.toggle('active', !!window.__preferUpscaleNotRotate); }
-				if(unlockRatioCheckbox){ unlockRatioCheckbox.disabled = false; unlockRatioCheckbox.checked = false; }
+				if(transformProportionalCheckbox){ transformProportionalCheckbox.disabled = false; transformProportionalCheckbox.checked = true; }
 				if(nativeCheckbox){ nativeCheckbox.disabled = false; nativeCheckbox.checked = false; window.__renderNative = false; }
 				const rotPageCheck = document.getElementById('rotPageCheck');
 				const scalePageCheck = document.getElementById('scalePageCheck');
@@ -696,7 +809,7 @@
 			const dpiEl = document.getElementById('dpiInput');
 			if(dpiEl){ dpiEl.disabled = false; dpiEl.value = window.__placedDpi || 96; }
 			// 3. Send dimensions to slot function for creating slot by these dimensions
-			if(fileInfo && isFinite(fileInfo.widthMm) && isFinite(fileInfo.heightMm)){
+			if(!keepStructure && !append && !window.__projectActive && fileInfo && isFinite(fileInfo.widthMm) && isFinite(fileInfo.heightMm)){
 				// compute preview pixel size using DPI (px per mm = dpi/25.4)
 				const dpi = 96;
 				const pxPerMm = dpi / 25.4;
@@ -720,11 +833,8 @@
 					targetH = targetH * fitScale;
 				}
 
-				const linkScaleCheck = document.getElementById('linkSlotScaleCheckbox');
-				const shouldFit = linkScaleCheck ? linkScaleCheck.checked : false;
-
-				window.__currentScaleX = shouldFit ? 1 : fitScale;
-				window.__currentScaleY = shouldFit ? 1 : fitScale;
+				window.__currentScaleX = fitScale;
+				window.__currentScaleY = fitScale;
 
 				const scSl = document.getElementById('scaleSlider');
 				if(scSl) scSl.value = Math.round(window.__currentScaleX * 100);
@@ -733,11 +843,7 @@
 
 				const wpx = Math.max(1, targetW * pxPerMm);
 				const hpx = Math.max(1, targetH * pxPerMm);
-				if (shouldFit) {
-					window.setSlotFrame(wpx, hpx);
-				} else {
-					window.setSlotSize(wpx, hpx);
-				}
+				window.setSlotSize(wpx, hpx);
 				window.__trimW = wpx;
 				window.__trimH = hpx;
 				window.__expandL = 0;
@@ -816,6 +922,11 @@
 			info.heightPt = hPts;
 			info.widthMm = Number(((wPts / 72) * 25.4).toFixed(2));
 			info.heightMm = Number(((hPts / 72) * 25.4).toFixed(2));
+			
+			// Store coordinate offsets for non-zero origin boxes (Canva fix)
+			info.boxOffsetX = box ? box[0] : 0;
+			info.boxOffsetY = box ? box[1] : 0;
+
 			// Surface detected box and rotation (if present)
 			info.detectedBox = box || null;
 			info.rotation = (typeof page.rotate === 'number') ? page.rotate : 0;
@@ -844,6 +955,11 @@
 	window.generateImposedPdf = async function(options = {}){
 		if(!window.__lastObjectURL || !window.PDFLib) return;
 		const { PDFDocument, rgb, cmyk, degrees, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = window.PDFLib;
+
+		const exportCtx = { options };
+		for (const fn of window.impositionfix._hooks.beforeExport) {
+			try { fn(exportCtx); } catch(e) { console.error('Plugin hook error (beforeExport):', e); }
+		}
 
 		// Progress Bar
 		const updateProgress = async (msg, pct) => {
@@ -906,7 +1022,7 @@
 				for (const item of files) {
 					const subFiles = (item.type === 'group') ? item.files : [item];
 					for (const file of subFiles) {
-					const buffer = await file.arrayBuffer();
+					const buffer = await getFileBuffer(file);
 					if (isImage(file)) {
 						let image;
 						if (file.type === 'image/png' || file.name.match(/\.png$/i)) {
@@ -919,7 +1035,10 @@
 					} else {
 						const pdfToMerge = await PDFDocument.load(buffer);
 						const pagesToCopy = await srcDoc.copyPages(pdfToMerge, pdfToMerge.getPageIndices());
-						pagesToCopy.forEach(p => srcDoc.addPage(p));
+						pagesToCopy.forEach(p => {
+							resetPageBoxes(p);
+							srcDoc.addPage(p);
+						});
 					}
 					}
 				}
@@ -1031,6 +1150,7 @@
 					}
 					if (pdfPageNum > srcDoc.getPageCount()) continue;
 
+					const srcPage = srcDoc.getPage(pdfPageNum - 1);
 					const embeddedPage = await getEmbeddedPage(pdfPageNum - 1);
 					const preRect = preview.getBoundingClientRect();
 
@@ -1082,7 +1202,7 @@
 						else if (window.__fillImage) fitMode = 'fill';
 						else if (window.__stretchImage) fitMode = 'stretch';
 					}
-					const ignoreTransforms = !!fitMode;
+					const ignoreTransforms = !!fitMode || fitToPage;
 
 					let scaleX = safe((typeof slotT.scaleX === 'number') ? slotT.scaleX : ((typeof pageT.scaleX === 'number') ? pageT.scaleX : (window.__currentScaleX || 1)));
 					let scaleY = safe((typeof slotT.scaleY === 'number') ? slotT.scaleY : ((typeof pageT.scaleY === 'number') ? pageT.scaleY : (window.__currentScaleY || 1)));
@@ -1096,6 +1216,10 @@
 					let rawOffsetY = (typeof slotT.offsetY === 'number') ? slotT.offsetY : ((typeof pageT.offsetY === 'number') ? pageT.offsetY : (window.__offsetY || 0));
 					if(ignoreTransforms) { rawOffsetX = 0; rawOffsetY = 0; }
 
+					// Creep compensation (Data tab): content shift that stays active like
+					// the expansion offsets — mirrored from the preview renderSlot pipeline.
+					const creepPx = ((typeof window.getCreepOffsetMm === 'function') ? (parseFloat(window.getCreepOffsetMm(currentPreviewIndex)) || 0) : 0) * (96 / 25.4);
+
 					// Calculate expansion offset (to keep content centered in trim box)
 					const l = (layout.expandL !== undefined) ? layout.expandL : (window.__expandL || 0);
 					const r_exp = (layout.expandR !== undefined) ? layout.expandR : (window.__expandR || 0);
@@ -1104,7 +1228,9 @@
 					const expandOffsetX = (l - r_exp) / 2;
 					const expandOffsetY = (top - bot) / 2;
 
-					const offsetX = safe((rawOffsetX + expandOffsetX) * pxToPt);
+					// When the slot frame is shifted together with creep (Data tab),
+					// the placement box already moves; don't double-shift content.
+					const offsetX = safe((rawOffsetX + expandOffsetX + (window.__creepWithFrame ? 0 : creepPx)) * pxToPt);
 					const offsetY = safe((rawOffsetY + expandOffsetY) * pxToPt);
 
 					// Note: CSS Y offset is down (positive), PDF Y offset is up (positive).
@@ -1135,8 +1261,17 @@
 					// Enable smart fit if explicitly requested (ignoreTransforms) OR if conditions are met (fitToPage + scale=1)
 					const usingSmartFit = (window.calculatePageFit && (ignoreTransforms || (fitToPage !== false && globalSX === 1 && globalSY === 1)));
 
-					if(usingSmartFit){
+				if(usingSmartFit){
+					const proportionalScale = slotT.proportionalScale || window.__proportionalScale;
+					if (proportionalScale) {
+						fitScale = proportionalScale;
+					} else {
 						const fit = window.calculatePageFit(pageW, pageH, boxW, boxH, rotation, skewX, skewY, fitMode);
+						fitScale = fit.scale;
+					}
+				} else {
+						const nativeScale = 1.0;
+						const fit = { scale: (fitToPage === false) ? nativeScale : (window.__lastFitScale || nativeScale), rotation: rotation, treatAsRotated: false };
 						fitScale = fit.scale;
 					}
 					
@@ -1234,11 +1369,14 @@
 						}
 					}
 
-					// Draw Overlays (e.g. purple square)
-					if(window.drawPdfOverlays) await window.drawPdfOverlays(newPage, boxX, boxY, boxW, boxH, window.PDFLib, pageNum, {x: l * pxToPt, y: top * pxToPt, r: r_exp * pxToPt}, currentPreviewIndex, allPages);
+					// Draw Overlays (e.g. purple square) - per slot (regular UI overlays)
+					if(window.drawPdfOverlays) await window.drawPdfOverlays(newPage, boxX, boxY, boxW, boxH, window.PDFLib, pageNum, {x: l * pxToPt, y: top * pxToPt, r: r_exp * pxToPt, b: bot * pxToPt}, currentPreviewIndex, allPages);
 				}
 
-				// Draw Crop Marks
+				// Draw Plugin Overlays (e.g. filter overlay) - once per page after all slots
+				if(window.drawPdfPageOverlays) await window.drawPdfPageOverlays(newPage, window.PDFLib);
+
+			// Draw Crop Marks
 				// We can reuse the SVG lines from the DOM if they exist
 				const svgLines = sheet.querySelectorAll('.sheet-crop-marks line');
 				svgLines.forEach((line, idx) => {
@@ -1298,9 +1436,14 @@
 			document.body.removeChild(link);
 			debug('✓ PDF generation complete!');
 			await updateProgress('Done!', 100);
-			setTimeout(closeProgress, 1000);
+		setTimeout(closeProgress, 1000);
 
-		} catch(e) {
+		const exportCtx = { options };
+		for (const fn of window.impositionfix._hooks.afterExport) {
+			try { fn(exportCtx); } catch(e) { console.error('Plugin hook error (afterExport):', e); }
+		}
+
+	} catch(e) {
 			closeProgress();
 			debug('✗ FATAL ERROR: ' + e.message);
 			debug('Stack: ' + (e.stack || 'N/A'));
@@ -1336,6 +1479,10 @@
 		container.style.whiteSpace = 'normal'; // Reset pre-wrap for flex layout
 
 		window.__importedFiles.forEach((file, index) => {
+            const isExpanded = window.__expandedFiles.has(index);
+            const fileWrapper = document.createElement('div');
+            fileWrapper.style.marginBottom = '4px';
+
 			const row = document.createElement('div');
 			row.style.display = 'flex';
 			row.style.alignItems = 'center';
@@ -1345,6 +1492,12 @@
 			row.style.borderTop = '1px solid transparent';
 			row.draggable = true;
 			row.title = file.name;
+
+			const dragIcon = document.createElement('span');
+			dragIcon.className = 'material-icons';
+			Object.assign(dragIcon.style, { fontSize: '16px', color: '#666', marginRight: '4px', cursor: 'grab' });
+			dragIcon.textContent = 'drag_indicator';
+			row.appendChild(dragIcon);
 
 			if(file.hidden) row.style.opacity = '0.5';
 
@@ -1365,6 +1518,19 @@
 			};
 			row.appendChild(visBtn);
 
+			const delBtn = document.createElement('button');
+			delBtn.className = 'toolbox-btn';
+			Object.assign(delBtn.style, { width: '20px', padding: '0', marginRight: '4px', background: 'transparent', border: 'none', color: '#d0d0d0' });
+			delBtn.innerHTML = `<span class="material-icons" style="font-size:14px">delete</span>`;
+			delBtn.title = "Remove file";
+			delBtn.onclick = (e) => {
+				e.stopPropagation();
+				window.__importedFiles.splice(index, 1);
+				window.__selectedFileListPages.clear();
+				window.openPdfFile(window.__importedFiles, true);
+			};
+			row.appendChild(delBtn);
+
 			const idx = document.createElement('span');
 			idx.textContent = 'f' + (index + 1);
 			idx.style.marginRight = '6px';
@@ -1374,7 +1540,11 @@
 
 			const name = document.createElement('button');
 			name.textContent = file.name;
-			name.title = "Add f" + (index + 1) + ":1- to layout";
+			if(file.dummy) {
+				name.title = "File missing (Local file paths cannot be saved). Click icon to relink.";
+			} else {
+				name.title = "Add f" + (index + 1) + ":1- to layout";
+			}
 			name.style.whiteSpace = 'nowrap';
 			name.style.overflow = 'hidden';
 			name.style.textOverflow = 'ellipsis';
@@ -1383,7 +1553,7 @@
 			name.style.textAlign = 'left';
 			name.style.background = 'transparent';
 			name.style.border = 'none';
-			name.style.color = '#ccc';
+			name.style.color = file.dummy ? '#ff6666' : '#ccc';
 			name.style.cursor = 'pointer';
 			name.style.padding = '0';
 			
@@ -1400,8 +1570,8 @@
 					input.dispatchEvent(new Event('input'));
 				}
 			};
-			name.onmouseover = () => name.style.color = '#fff';
-			name.onmouseout = () => name.style.color = '#ccc';
+			name.onmouseover = () => name.style.color = file.dummy ? '#ffaaaa' : '#fff';
+			name.onmouseout = () => name.style.color = file.dummy ? '#ff6666' : '#ccc';
 
 			const countSpan = document.createElement('span');
 			const count = (window.__filePageCounts && window.__filePageCounts[index]) || 0;
@@ -1413,6 +1583,39 @@
 
 			row.appendChild(idx);
 			row.appendChild(name);
+			
+			if(file.dummy){
+				const relinkBtn = document.createElement('button');
+				relinkBtn.className = 'toolbox-btn';
+				relinkBtn.style.width = '20px';
+				relinkBtn.style.padding = '0';
+				relinkBtn.style.marginLeft = '4px';
+				relinkBtn.innerHTML = '<span class="material-icons" style="font-size:14px">find_replace</span>';
+				relinkBtn.title = "Relink file";
+				relinkBtn.onclick = (e) => {
+					e.stopPropagation();
+					const input = document.createElement('input');
+					input.type = 'file';
+					input.multiple = true;
+					input.accept = '.pdf,image/*';
+					input.onchange = (ev) => {
+						if(ev.target.files && ev.target.files.length > 0){
+							const files = Array.from(ev.target.files);
+							let newItem;
+							if(files.length > 1){
+								newItem = { type: 'group', name: `Images (${files.length})`, files: files };
+							} else {
+								newItem = files[0];
+							}
+							window.__importedFiles[index] = newItem;
+							window.openPdfFile(window.__importedFiles, true);
+						}
+					};
+					input.click();
+				};
+				row.appendChild(relinkBtn);
+			}
+
 			row.appendChild(countSpan);
 
 			// Drag Events
@@ -1468,7 +1671,204 @@
 				window.openPdfFile(files, true);
 			});
 
-			container.appendChild(row);
+            // Expand Button at the end
+            const expandBtn = document.createElement('button');
+            expandBtn.className = 'toolbox-btn';
+            expandBtn.style.width = '24px';
+            expandBtn.style.padding = '0';
+            expandBtn.style.background = 'transparent';
+            expandBtn.style.border = 'none';
+            expandBtn.style.color = '#888';
+            expandBtn.innerHTML = `<span class="material-icons" style="font-size:18px">${isExpanded ? 'expand_less' : 'expand_more'}</span>`;
+            expandBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (isExpanded) window.__expandedFiles.delete(index);
+                else window.__expandedFiles.add(index);
+                window.renderFileList();
+            };
+            row.appendChild(expandBtn);
+
+            fileWrapper.appendChild(row);
+
+            // Render Pages if expanded
+            if(isExpanded && !file.dummy){
+                const pagesContainer = document.createElement('div');
+                Object.assign(pagesContainer.style, {
+                    display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '6px 10px 6px 30px',
+                    background: 'rgba(0,0,0,0.15)', borderRadius: '4px', marginTop: '2px'
+                });
+
+                // Get current page sequence
+                let pageIndices = file.pageOrder;
+                if ((!pageIndices || pageIndices.length === 0) && window.__filePageCounts[index]) {
+                    pageIndices = Array.from({ length: window.__filePageCounts[index] }, (_, i) => i);
+                    file.pageOrder = pageIndices;
+                }
+                if (!pageIndices) pageIndices = [];
+                
+                const fileSelection = window.__selectedFileListPages.get(index);
+                if (fileSelection?.size > 1) {
+                    const addSelectedBtn = window.createToolboxBtn('playlist_add', 'Add Selected', () => {
+                        pageIndices.forEach(pOrigIdx => {
+                            if (fileSelection.has(pOrigIdx)) addPageToParser(index, pOrigIdx);
+                        });
+                    });
+                    Object.assign(addSelectedBtn.style, {
+                        width: 'auto', fontSize: '9px', padding: '2px 6px', height: '18px', marginBottom: '4px'
+                    });
+                    pagesContainer.appendChild(addSelectedBtn);
+                }
+
+                const addPageToParser = (fIdx, pOrigIdx) => {
+                    const input = document.getElementById('pageRangeInput');
+                    if(!input) return;
+                    const fObj = window.__importedFiles[fIdx];
+                    let absOffset = 1;
+                    for(let k=0; k<fIdx; k++) absOffset += (window.__filePageCounts[k] || 0);
+                    const currentIndices = fObj.pageOrder.filter(idx => !fObj.hiddenPages || !fObj.hiddenPages.has(idx));
+                    const idxInVisible = currentIndices.indexOf(pOrigIdx);
+                    if(idxInVisible !== -1){
+                        const pNum = absOffset + idxInVisible;
+                        const current = input.value.trim();
+                        input.value = current ? (current + ' ' + pNum) : String(pNum);
+                        input.dispatchEvent(new Event('input'));
+                    }
+                };
+
+                pageIndices.forEach((origIdx, viewIdx) => {
+                    const isHidden = file.hiddenPages && file.hiddenPages.has(origIdx);
+                    const isSelected = fileSelection?.has(origIdx);
+                    
+                    const pItem = document.createElement('div');
+                    Object.assign(pItem.style, {
+                        display: 'flex', alignItems: 'center', background: isSelected ? (isHidden ? '#334' : '#556') : (isHidden ? '#222' : '#444'),
+                        padding: '2px 6px', borderRadius: '3px', fontSize: '10px', color: isHidden ? '#666' : '#eee',
+                        cursor: 'pointer', border: '1px solid', borderColor: isSelected ? '#00bcd4' : '#555', gap: '4px'
+                    });
+                    pItem.draggable = true;
+                    pItem.title = `Page ${origIdx + 1}. Click number to add. Click body to select. Drag to reorder.`;
+
+                    const pDrag = document.createElement('span');
+                    pDrag.className = 'material-icons';
+                    Object.assign(pDrag.style, { fontSize: '12px', opacity: '0.4', cursor: 'grab' });
+                    pDrag.textContent = 'drag_indicator';
+                    pItem.appendChild(pDrag);
+
+                    const pLabel = document.createElement('span');
+                    pLabel.textContent = origIdx + 1;
+                    Object.assign(pLabel.style, { fontWeight: 'bold', padding: '0 2px', borderRadius: '2px' });
+                    pLabel.onmouseover = () => pLabel.style.background = 'rgba(255,255,255,0.15)';
+                    pLabel.onmouseout = () => pLabel.style.background = 'transparent';
+                    pLabel.onclick = (e) => {
+                        e.stopPropagation();
+                        addPageToParser(index, origIdx);
+                    };
+                    pItem.appendChild(pLabel);
+
+                    const pVis = document.createElement('span');
+                    pVis.className = 'material-icons';
+                    Object.assign(pVis.style, { fontSize: '12px', opacity: '0.6' });
+                    pVis.textContent = isHidden ? 'visibility_off' : 'visibility';
+                    pVis.onclick = (e) => {
+                        e.stopPropagation();
+                        if(!file.hiddenPages) file.hiddenPages = new Set();
+                        if(isHidden) file.hiddenPages.delete(origIdx);
+                        else file.hiddenPages.add(origIdx);
+                        window.openPdfFile(window.__importedFiles, true);
+                    };
+                    pItem.appendChild(pVis);
+
+                    // Multi-selection Logic
+                    pItem.onclick = (e) => {
+                        e.stopPropagation();
+                        if (!window.__selectedFileListPages.has(index)) {
+                            window.__selectedFileListPages.set(index, new Set());
+                        }
+                        const selection = window.__selectedFileListPages.get(index);
+
+                        if (e.ctrlKey || e.metaKey) {
+                            if (selection.has(origIdx)) selection.delete(origIdx);
+                            else selection.add(origIdx);
+                        } else if (e.shiftKey && window.__lastFileListClicked?.fileIdx === index) {
+                            const start = Math.min(window.__lastFileListClicked.viewIdx, viewIdx);
+                            const end = Math.max(window.__lastFileListClicked.viewIdx, viewIdx);
+                            for (let k = start; k <= end; k++) {
+                                selection.add(pageIndices[k]);
+                            }
+                        } else {
+                            window.__selectedFileListPages.clear();
+                            const newSet = new Set();
+                            newSet.add(origIdx);
+                            window.__selectedFileListPages.set(index, newSet);
+                        }
+                        
+                        window.__lastFileListClicked = { fileIdx: index, viewIdx: viewIdx };
+                        window.renderFileList();
+                    };
+
+                    // Drag Reordering for Pages
+                    pItem.addEventListener('dragstart', (e) => {
+                        e.stopPropagation();
+                        const selectedInFile = window.__selectedFileListPages.get(index);
+                        const toMove = (selectedInFile && selectedInFile.has(origIdx)) 
+                            ? Array.from(selectedInFile).map(oidx => pageIndices.indexOf(oidx))
+                            : [viewIdx];
+                        
+                        e.dataTransfer.setData('application/json', JSON.stringify({ 
+                            fileIdx: index, 
+                            pageIndices: toMove.sort((a,b) => a-b) 
+                        }));
+                        pItem.style.opacity = '0.5';
+                    });
+                    pItem.addEventListener('dragend', (e) => { e.stopPropagation(); pItem.style.opacity = '1'; });
+                    pItem.addEventListener('dragover', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const rect = pItem.getBoundingClientRect();
+                        const midX = rect.left + rect.width / 2;
+                        if (e.clientX < midX) {
+                            pItem.style.borderLeft = '2px solid #00bcd4';
+                            pItem.style.borderRight = '1px solid ' + (isSelected ? '#00bcd4' : '#555');
+                            pItem.dataset.dropSide = 'left';
+                        } else {
+                            pItem.style.borderRight = '2px solid #00bcd4';
+                            pItem.style.borderLeft = '1px solid ' + (isSelected ? '#00bcd4' : '#555');
+                            pItem.dataset.dropSide = 'right';
+                        }
+                    });
+                    pItem.addEventListener('dragleave', (e) => {
+                        e.stopPropagation();
+                        pItem.style.borderLeft = '1px solid ' + (isSelected ? '#00bcd4' : '#555');
+                        pItem.style.borderRight = '1px solid ' + (isSelected ? '#00bcd4' : '#555');
+                    });
+                    pItem.addEventListener('drop', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        try {
+                            const data = JSON.parse(e.dataTransfer.getData('application/json'));
+                            if(data.fileIdx === index){
+                                const order = [...file.pageOrder];
+                                const movingValues = data.pageIndices.map(vIdx => file.pageOrder[vIdx]);
+                                
+                                [...data.pageIndices].sort((a,b) => b-a).forEach(vIdx => order.splice(vIdx, 1));
+                                
+                                let insertAt = order.indexOf(origIdx);
+                                if (insertAt !== -1 && pItem.dataset.dropSide === 'right') insertAt++;
+                                if (insertAt === -1) return; // Ignore if dropped on moving items
+                                
+                                order.splice(insertAt, 0, ...movingValues);
+                                file.pageOrder = order;
+                                window.openPdfFile(window.__importedFiles, true);
+                            }
+                        } catch(err){}
+                    });
+
+                    pagesContainer.appendChild(pItem);
+                });
+                fileWrapper.appendChild(pagesContainer);
+            }
+
+            container.appendChild(fileWrapper);
 		});
 		if(window.renderOverlayInputs) window.renderOverlayInputs();
 	};

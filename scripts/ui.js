@@ -135,7 +135,7 @@
 
 		const switchTab = (activeTab, activeContent) => {
 			tabs.forEach(t => t.style.borderBottomColor = (t === activeTab) ? '#00bcd4' : 'transparent');
-			contents.forEach(c => c.style.display = (c === activeContent) ? 'block' : 'none');
+			contents.forEach(c => c.style.display = (c === activeContent) ? 'flex' : 'none');
 		};
 
 		tabReadmeBtn.addEventListener('click', () => switchTab(tabReadmeBtn, readmeContent));
@@ -155,7 +155,10 @@
 	if(input){
 		input.addEventListener('change', (ev)=>{
 			if(ev.target.files && ev.target.files.length > 0){
-				if(window.openPdfFile) window.openPdfFile(ev.target.files);
+				const append = !!window.__appendFilesMode;
+				if(window.openPdfFile) window.openPdfFile(ev.target.files, false, append);
+				window.__appendFilesMode = false;
+				ev.target.value = ''; // Reset to allow re-selecting same files
 			}
 		});
 	}
@@ -170,6 +173,7 @@
 		'cropBleedXInput', 'cropBleedYInput', 'innerCropBleedXInput', 'innerCropBleedYInput',
 		'innerCropStyleSelect', 'boxXInput', 'boxYInput', 'paperSelect', 'pageRangeInput',
 		'autoGridCheck', 'showCropMarksCheck', 'gridDuplexCheck',
+		'transformProportionalCheckbox', 'markGapProportionalCheckbox', 'cropBleedProportionalCheckbox', 'innerCropBleedProportionalCheckbox',
 		'slotWidthInput', 'slotHeightInput', 'slotScalePercentInput', 'slotProportionalCheckbox', 'linkSlotScaleCheckbox', 'expandLeftInput', 'expandRightInput', 'expandTopInput', 'expandBottomInput',
 		'sheetWidthInput', 'sheetHeightInput',
 		'rotationInput', 'scaleSlider', 'skewXInput', 'skewYInput', 'offsetXInput', 'offsetYInput',
@@ -186,7 +190,11 @@
 		paper: '320,450',
 		range: '1-',
 		fitToPage: true,
-		slotProportional: true
+		slotProportional: true,
+		transformProportional: true,
+		markGapProportional: true,
+		cropBleedProportional: true,
+		innerCropBleedProportional: true
 	};
 
 	const getLayoutSettings = (options = { grid:true, sheet:true, placement:true, range:true, transform:true, data:true }) => {
@@ -204,6 +212,9 @@
 			s.innerBleedY = document.getElementById('innerCropBleedYInput')?.value || 0;
 			s.innerMarkStyle = document.getElementById('innerCropStyleSelect')?.value || 'solid';
 			s.showCropMarks = document.getElementById('showCropMarksCheck')?.checked;
+			s.markGapProportional = document.getElementById('markGapProportionalCheckbox')?.checked;
+			s.cropBleedProportional = document.getElementById('cropBleedProportionalCheckbox')?.checked;
+			s.innerCropBleedProportional = document.getElementById('innerCropBleedProportionalCheckbox')?.checked;
 		}
 
 		if(options.sheet){
@@ -218,11 +229,12 @@
 			s.duplexMirror = document.getElementById('gridDuplexCheck')?.checked;
 			s.slotW = document.getElementById('slotWidthInput')?.value || '';
 			s.slotH = document.getElementById('slotHeightInput')?.value || '';
+			s.slotScale = document.getElementById('slotScalePercentInput')?.value || '';
 			s.expandL = document.getElementById('expandLeftInput')?.value || 0;
 			s.expandR = document.getElementById('expandRightInput')?.value || 0;
 			s.expandT = document.getElementById('expandTopInput')?.value || 0;
 			s.expandB = document.getElementById('expandBottomInput')?.value || 0;
-			s.fitToPage = document.getElementById('linkSlotScaleCheckbox')?.checked;
+			s.fitToPage = document.getElementById('linkSlotScaleCheckbox')?.classList.contains('active');
 			s.slotProportional = document.getElementById('slotProportionalCheckbox')?.checked;
 		}
 
@@ -238,6 +250,7 @@
 			s.skewY = window.__skewY || 0;
 			s.offsetX = window.__offsetX || 0;
 			s.offsetY = window.__offsetY || 0;
+			s.transformProportional = document.getElementById('transformProportionalCheckbox')?.checked;
 			s.fitMode = window.__preferUpscaleNotRotate ? 'fit' : (window.__fillImage ? 'fill' : (window.__stretchImage ? 'stretch' : null));
 		}
 
@@ -246,6 +259,43 @@
 			s.mergeConfig = window.__mergeConfig || {};
 			s.mergeSourceMode = document.getElementById('mergeSourceSelect')?.value || 'all';
 			s.mergeSourcePage = parseInt(document.getElementById('mergePageNumInput')?.value) || 1;
+		}
+
+		// Capture slot-specific overrides (e.g. different column widths)
+		if (window.__slotTransforms) {
+			const transformsToSave = {};
+			let hasTransforms = false;
+			
+			Object.keys(window.__slotTransforms).forEach(key => {
+				const t = window.__slotTransforms[key];
+				const newT = {};
+				let keep = false;
+
+				if (options.placement) {
+					if (t.layout) { newT.layout = t.layout; keep = true; }
+					if (t.slotX !== undefined) { newT.slotX = t.slotX; keep = true; }
+					if (t.slotY !== undefined) { newT.slotY = t.slotY; keep = true; }
+					if (t.fitToPage !== undefined) { newT.fitToPage = t.fitToPage; keep = true; }
+				}
+
+				if (options.transform) {
+					if (t.rotation !== undefined) { newT.rotation = t.rotation; keep = true; }
+					if (t.scaleX !== undefined) { newT.scaleX = t.scaleX; keep = true; }
+					if (t.scaleY !== undefined) { newT.scaleY = t.scaleY; keep = true; }
+					if (t.skewX !== undefined) { newT.skewX = t.skewX; keep = true; }
+					if (t.skewY !== undefined) { newT.skewY = t.skewY; keep = true; }
+					if (t.offsetX !== undefined) { newT.offsetX = t.offsetX; keep = true; }
+					if (t.offsetY !== undefined) { newT.offsetY = t.offsetY; keep = true; }
+					if (t.fitMode !== undefined) { newT.fitMode = t.fitMode; keep = true; }
+				}
+
+				if (keep) {
+					transformsToSave[key] = newT;
+					hasTransforms = true;
+				}
+			});
+			
+			if (hasTransforms) s.slotTransforms = transformsToSave;
 		}
 
 		return s;
@@ -301,18 +351,35 @@
 		setVal('innerCropStyleSelect', settings.innerMarkStyle);
 		setCheck('showCropMarksCheck', settings.showCropMarks);
 
+		setCheck('markGapProportionalCheckbox', settings.markGapProportional);
+		setCheck('cropBleedProportionalCheckbox', settings.cropBleedProportional);
+		setCheck('innerCropBleedProportionalCheckbox', settings.innerCropBleedProportional);
+
 		setVal('boxXInput', settings.boxX);
 		setVal('boxYInput', settings.boxY);
 		setCheck('gridDuplexCheck', settings.duplexMirror);
 		
 		setVal('slotWidthInput', settings.slotW);
 		setVal('slotHeightInput', settings.slotH);
+		if(settings.slotScale) setVal('slotScalePercentInput', settings.slotScale);
 		setVal('expandLeftInput', settings.expandL);
 		setVal('expandRightInput', settings.expandR);
 		setVal('expandTopInput', settings.expandT);
 		setVal('expandBottomInput', settings.expandB);
-		if(settings.fitToPage !== undefined) setCheck('linkSlotScaleCheckbox', settings.fitToPage);
+		if(settings.fitToPage !== undefined) {
+			const linkEl = document.getElementById('linkSlotScaleCheckbox');
+			if(linkEl) {
+				linkEl.classList.toggle('active', settings.fitToPage);
+				linkEl.setAttribute('aria-pressed', settings.fitToPage);
+			}
+		}
 		if(settings.slotProportional !== undefined) setCheck('slotProportionalCheckbox', settings.slotProportional);
+
+		if(settings.slotTransforms) {
+			window.__slotTransforms = JSON.parse(JSON.stringify(settings.slotTransforms));
+		} else {
+			window.__slotTransforms = {};
+		}
 
 		setVal('pageRangeInput', settings.range);
 
@@ -325,6 +392,7 @@
 		}
 		if(settings.skewX !== undefined) setVal('skewXInput', settings.skewX);
 		if(settings.skewY !== undefined) setVal('skewYInput', settings.skewY);
+		if(settings.transformProportional !== undefined) setCheck('transformProportionalCheckbox', settings.transformProportional);
 		
 		const pxPerMm = 96 / 25.4;
 		if(settings.offsetX !== undefined) setVal('offsetXInput', (settings.offsetX / pxPerMm).toFixed(2));
@@ -1058,8 +1126,18 @@
 
 			const positionBalloon = () => {
 				const rect = rangeHelpBtn.getBoundingClientRect();
-				rangeHelpBalloon.style.left = (rect.right + 10) + 'px';
+				const w = rangeHelpBalloon.offsetWidth;
 				const h = rangeHelpBalloon.offsetHeight;
+				const vw = window.innerWidth;
+				const vh = window.innerHeight;
+
+				// Horizontal flip: try right first, flip left if it overflows
+				let left = rect.right + 10;
+				if(left + w > vw - 10) left = rect.left - w - 10;
+				if(left < 10) left = 10;
+				rangeHelpBalloon.style.left = left + 'px';
+
+				// Vertical centering with viewport bounds
 				let top = rect.top - (h / 2) + (rect.height / 2);
 				if(top < 10) top = 10;
 				if(top + h > window.innerHeight - 10) top = window.innerHeight - h - 10;
@@ -1073,36 +1151,69 @@
 		}
 	}
 
-	// wire UI: Left Toolbar Tabs
-	const ltTabGrid = document.getElementById('ltTabGrid');
-	const ltTabColor = document.getElementById('ltTabColor');
-	const ltTabData = document.getElementById('ltTabData');
-	const ltContentGrid = document.getElementById('ltContentGrid');
-	const ltContentColor = document.getElementById('ltContentColor');
-	const ltContentData = document.getElementById('ltContentData');
-
-	if(ltTabGrid && ltTabColor && ltTabData && ltContentGrid && ltContentColor && ltContentData){
-		const updateLeftTabs = (activeTab, activeContent) => {
-			[ltTabGrid, ltTabColor, ltTabData].forEach(t => {
-				t.style.borderBottomColor = (t === activeTab) ? '#00bcd4' : 'transparent';
-				t.style.color = (t === activeTab) ? '#fff' : '#888';
-			});
-			[ltContentGrid, ltContentColor, ltContentData].forEach(c => {
-				c.style.display = (c === activeContent) ? 'block' : 'none';
-			});
-		};
-
-		ltTabGrid.addEventListener('click', () => updateLeftTabs(ltTabGrid, ltContentGrid));
-		ltTabColor.addEventListener('click', () => updateLeftTabs(ltTabColor, ltContentColor));
-		ltTabData.addEventListener('click', () => updateLeftTabs(ltTabData, ltContentData));
-
-		// Initialize Data Tab UI
-		ltContentData.innerHTML = '';
+	// Data Merge UI initialization (Data tab content)
+		const _ltContentData = document.getElementById('ltContentData');
+		if(_ltContentData){
+			_ltContentData.innerHTML = '';
 
 		// --- Data Merge Section ---
 		const mergeHeader = document.createElement('h3');
 		mergeHeader.textContent = 'Data Merge';
-		ltContentData.appendChild(mergeHeader);
+		mergeHeader.title = 'Merge data from a CSV/XLS/XLSX file onto imposition pages.';
+
+		const mergeHelpBtn = document.createElement('button');
+		mergeHelpBtn.innerHTML = '&#63;';
+		mergeHelpBtn.className = 'help-btn';
+		mergeHelpBtn.title = 'Show Data Merge Help';
+		mergeHelpBtn.style.marginLeft = '6px';
+		mergeHelpBtn.style.verticalAlign = 'middle';
+
+		const mergeHelpBalloon = document.createElement('div');
+		mergeHelpBalloon.className = 'help-balloon';
+		mergeHelpBalloon.style.display = 'none';
+		mergeHelpBalloon.innerHTML = `
+			<h3>Data Merge File Format</h3>
+			<p>Load a CSV, XLS, or XLSX file. Each row maps to one page of the current imposition. Blank rows are skipped.</p>
+			<h3>How It Works</h3>
+			<ol>
+				<li>Load a data file (CSV / XLS / XLSX).</li>
+				<li>Enable each column with checkbox in the right upper corner.</li>
+				<li>Set the Background source: <strong>Sequence</strong> uses one page per data row in order; <strong>Repeat Page</strong> repeats one chosen page for every row.</li>
+			</ol>
+			<p class="note"><strong>Note: Text size and font appearance you can edit in Styles tab.</p>
+		`;
+
+		const positionMergeBalloon = () => {
+			const rect = mergeHelpBtn.getBoundingClientRect();
+			const w = mergeHelpBalloon.offsetWidth;
+			const h = mergeHelpBalloon.offsetHeight;
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+
+			// Horizontal flip: try right first, flip left if it overflows
+			let left = rect.right + 10;
+			if(left + w > vw - 10) left = rect.left - w - 10;
+			if(left < 10) left = 10;
+			mergeHelpBalloon.style.left = left + 'px';
+
+			// Vertical centering with viewport bounds
+			let top = rect.top - (h / 2) + (rect.height / 2);
+			if(top < 10) top = 10;
+			if(top + h > window.innerHeight - 10) top = window.innerHeight - h - 10;
+			mergeHelpBalloon.style.top = top + 'px';
+		};
+
+		mergeHelpBalloon.addEventListener('mouseenter', () => { mergeHelpBalloon.style.display = 'block'; positionMergeBalloon(); });
+		mergeHelpBalloon.addEventListener('mouseleave', () => { mergeHelpBalloon.style.display = 'none'; });
+		mergeHelpBtn.addEventListener('click', (e) => { e.stopPropagation(); if(mergeHelpBalloon.style.display === 'block'){ mergeHelpBalloon.style.display = 'none'; } else { mergeHelpBalloon.style.display = 'block'; positionMergeBalloon(); } });
+
+		const mergeHelpRow = document.createElement('div');
+		mergeHelpRow.style.display = 'flex';
+		mergeHelpRow.style.alignItems = 'center';
+		mergeHelpRow.appendChild(mergeHeader);
+		mergeHelpRow.appendChild(mergeHelpBtn);
+		_ltContentData.appendChild(mergeHelpRow);
+		document.body.appendChild(mergeHelpBalloon);
 
 		const mergeContainer = document.createElement('div');
 		mergeContainer.className = 'toolbox-row';
@@ -1115,45 +1226,99 @@
 		fileRow.style.gap = '5px';
 		fileRow.style.alignItems = 'center';
 
+		// Hidden native file input; triggered by the file-chooser label inside settings
 		const dataFileInput = document.createElement('input');
 		dataFileInput.type = 'file';
 		dataFileInput.accept = '.csv,.xls,.xlsx';
 		dataFileInput.style.display = 'none';
 		dataFileInput.id = 'dataMergeInput';
 
-		const dataFileBtn = document.createElement('label');
-		dataFileBtn.className = 'toolbox-btn';
-		dataFileBtn.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">upload_file</span> Load Data File';
-		dataFileBtn.htmlFor = 'dataMergeInput';
+		// Load Data File button: fold/unfold toggle that also enables/disables data.
+		const dataFileBtn = window.createToolboxBtn('', ' Data Merge', () => {
+			const open = dataFileBtn.classList.toggle('active');
+			dataFileBtn.setAttribute('aria-pressed', open);
+			if(dataChevron) dataChevron.textContent = open ? 'expand_less' : 'chevron_right';
+			if(dataSettings) dataSettings.style.display = open ? 'block' : 'none';
+			// Opening enables data merge; closing disables it without deleting the loaded data.
+			window.__mergeEnabled = open;
+			if(typeof renderDataMergeCards === 'function') renderDataMergeCards();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		}, 'Show/Hide Data Merge settings. Opening enables data merge; closing disables it (loaded data is kept).');
+		// Prepend a chevron (fold affordance) like the Creep toggle
+		const dataChevron = document.createElement('span');
+		dataChevron.className = 'material-icons';
+		dataChevron.style.fontSize = '16px';
+		dataChevron.style.verticalAlign = 'middle';
+		dataChevron.textContent = window.__mergeEnabled ? 'expand_less' : 'chevron_right';
+		dataFileBtn.insertBefore(dataChevron, dataFileBtn.firstChild);
+		dataFileBtn.classList.toggle('active', !!window.__mergeEnabled);
+		dataFileBtn.setAttribute('aria-pressed', !!window.__mergeEnabled);
 		dataFileBtn.style.flex = '1';
-		dataFileBtn.style.textAlign = 'center';
-		dataFileBtn.style.cursor = 'pointer';
-		dataFileBtn.title = "Supports CSV, XLS, XLSX";
-
-		const clearDataBtn = window.createDeleteBtn(() => {
-			window.__mergeData = null;
-			const info = document.getElementById('dataMergeInfo');
-			if(info) info.textContent = 'No data loaded';
-			dataFileInput.value = '';
-			renderDataMergeCards();
-		}, "Clear Data");
+		dataFileBtn.style.justifyContent = 'left';
 
 		fileRow.appendChild(dataFileInput);
 		fileRow.appendChild(dataFileBtn);
-		fileRow.appendChild(clearDataBtn);
 		mergeContainer.appendChild(fileRow);
+
+		// Foldable data settings (file chooser + clear/delete button + source options)
+		const dataSettings = document.createElement('div');
+		dataSettings.style.marginTop = '8px';
+		mergeContainer.appendChild(dataSettings);
+		if(!window.__mergeEnabled) dataSettings.style.display = 'none';
+
+		// File chooser + delete row (inside the folded panel)
+		const filePickRow = document.createElement('div');
+		filePickRow.style.display = 'flex';
+		filePickRow.style.gap = '5px';
+		filePickRow.style.alignItems = 'center';
+
+		const dataFilePicker = document.createElement('label');
+		dataFilePicker.className = 'toolbox-btn';
+		dataFilePicker.innerHTML = '<span class="material-icons" style="vertical-align:middle; font-size:16px">note_add</span> Choose Data File';
+		dataFilePicker.htmlFor = 'dataMergeInput';
+		dataFilePicker.style.flex = '1';
+		dataFilePicker.style.height = '32px';
+		dataFilePicker.style.display = 'flex';
+		dataFilePicker.style.alignItems = 'center';
+		dataFilePicker.style.justifyContent = 'center';
+		dataFilePicker.style.cursor = 'pointer';
+		dataFilePicker.style.boxSizing = 'border-box';
+		dataFilePicker.title = 'Supports CSV, XLS, XLSX';
+		filePickRow.appendChild(dataFilePicker);
+
+		const clearDataBtn = window.createDeleteBtn(() => {
+			window.__mergeData = null;
+			window.__mergeEnabled = false;
+			sourceRow.style.display = 'none';
+			dataFileInfo.style.display = 'none';
+			dataFileInfo.textContent = '';
+			dataFileInput.value = '';
+			renderDataMergeCards();
+			// Refresh the preview so the removed data overlays disappear
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+			// Collapse the settings panel after clearing
+			if(dataSettings) dataSettings.style.display = 'none';
+			if(dataFileBtn){
+				dataFileBtn.classList.remove('active');
+				dataFileBtn.setAttribute('aria-pressed', 'false');
+				if(dataChevron) dataChevron.textContent = 'chevron_right';
+			}
+		}, "Clear Data");
+		filePickRow.appendChild(clearDataBtn);
+		dataSettings.appendChild(filePickRow);
 
 		const dataFileInfo = document.createElement('div');
 		dataFileInfo.id = 'dataMergeInfo';
 		dataFileInfo.style.fontSize = '10px';
 		dataFileInfo.style.color = '#aaa';
 		dataFileInfo.style.marginTop = '4px';
-		dataFileInfo.textContent = 'No data loaded';
-		mergeContainer.appendChild(dataFileInfo);
+		dataFileInfo.style.display = 'none';
+		dataFileInfo.textContent = '';
+		dataSettings.appendChild(dataFileInfo);
 
 		// Source Page Selection
 		const sourceRow = document.createElement('div');
-		sourceRow.style.display = 'flex';
+		sourceRow.style.display = 'none';
 		sourceRow.style.gap = '5px';
 		sourceRow.style.marginTop = '8px';
 		sourceRow.style.alignItems = 'center';
@@ -1188,13 +1353,199 @@
 		sourceRow.appendChild(sourceLabel);
 		sourceRow.appendChild(sourceSelect);
 		sourceRow.appendChild(pageNumInput);
-		mergeContainer.appendChild(sourceRow);
+		dataSettings.appendChild(sourceRow);
 
-		ltContentData.appendChild(mergeContainer);
+		_ltContentData.appendChild(mergeContainer);
 		
 		const dataFieldsContainer = document.createElement('div');
 		dataFieldsContainer.id = 'dataFieldsContainer';
-		ltContentData.appendChild(dataFieldsContainer);
+		_ltContentData.appendChild(dataFieldsContainer);
+
+		// --- Creep Section (Booklet / N-Up) ---
+		const creepHeader = document.createElement('h3');
+		creepHeader.textContent = 'Creep';
+		creepHeader.title = 'Compensates paper pushout of folded signatures: inner sheets are shifted away from the spine so margins stay even after folding and trimming.';
+		_ltContentData.appendChild(creepHeader);
+
+		const creepContainer = document.createElement('div');
+		creepContainer.className = 'toolbox-row';
+		creepContainer.style.marginBottom = '15px';
+		creepContainer.style.borderBottom = '1px solid #444';
+		creepContainer.style.paddingBottom = '10px';
+
+		const refreshCreepPreview = () => {
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		const creepAnchorText = () => (window.__creepDirection === '1-n') ? 'first sheet fixed' : 'inside sheet fixed';
+		const updateCreepAmountLabel = () => {
+			const lbl = document.getElementById('creepAmountLabel');
+			if(!lbl) return;
+			if(window.__creepMode === 'per-sheet'){
+				lbl.textContent = 'Creep Step (mm)';
+				lbl.title = 'Fixed shift added to every sheet as it moves away from the anchored sheet (which one that is = Direction). Positive moves away from the spine; negative shifts to the opposite side.';
+			} else {
+				lbl.textContent = 'Total Creep (mm)';
+				lbl.title = 'Total pushout allowance of a signature. Spread evenly over the N-1 steps from the anchored sheet to the far end. Positive moves away from the spine; negative shifts to the opposite side. Use Apply=Per Sheet for fixed steps instead.';
+			}
+		};
+
+		window.updateCreepStatus = () => {
+			const infoEl = document.getElementById('creepStatusInfo');
+			if(!infoEl) return;
+			if(typeof window.getCreepInfo !== 'function'){ infoEl.textContent = ''; return; }
+			const info = window.getCreepInfo();
+			if(!info.active){
+				infoEl.textContent = info.reason || '';
+				return;
+			}
+			let totalPhys = 0;
+			info.sections.forEach(s => { totalPhys += Math.ceil((s.end - s.start) / info.sidesPerSheet); });
+			const firstPhys = Math.ceil((info.sections[0].end - info.sections[0].start) / info.sidesPerSheet);
+			if(window.__creepMode === 'per-sheet'){
+				const stp = parseFloat(window.__creepTotal) || 0;
+				infoEl.textContent = info.sections.length + ' signature group(s), ' + totalPhys + ' physical sheet(s). Step ' + stp.toFixed(2) + 'mm per sheet (' + creepAnchorText() + ')';
+			} else {
+				const step = (firstPhys > 1) ? ((parseFloat(window.__creepTotal) || 0) / (firstPhys - 1)) : 0;
+				infoEl.textContent = info.sections.length + ' signature group(s), ' + totalPhys + ' physical sheet(s). Step ' + step.toFixed(2) + 'mm per sheet (' + creepAnchorText() + ')';
+			}
+		};
+
+		const applyCreepState = () => {
+			window.__creepEnabled = creepToggleBtn.classList.contains('active');
+			window.__creepTotal = parseFloat(creepAmountInput.value) || 0;
+			window.__creepMode = creepModeSelect.value;
+			window.__creepDirection = creepDirSelect.value;
+			window.__creepWithFrame = creepFrameCheck.checked;
+			updateCreepAmountLabel();
+			window.updateCreepStatus();
+			refreshCreepPreview();
+		};
+
+		// Fold button (replaces the "Enable Creep" checkbox): clicking it expands
+		// the creep settings AND enables creep; clicking again collapses and disables.
+		const creepToggleBtn = window.createToolboxBtn(
+			'chevron_right', 'Creep Compensation',
+			() => {
+				const open = creepToggleBtn.classList.toggle('active');
+				window.__creepEnabled = open;
+				creepToggleBtn.setAttribute('aria-pressed', open);
+				const icon = creepToggleBtn.querySelector('.material-icons');
+				if(icon) icon.textContent = open ? 'expand_less' : 'chevron_right';
+				if(creepSettings) creepSettings.style.display = open ? 'block' : 'none';
+				window.updateCreepStatus && window.updateCreepStatus();
+				refreshCreepPreview();
+			},
+			'Show/Hide creep (booklet/N-up pushout) settings. Opening the panel also turns creep on; collapsing turns it off.'
+		);
+		creepToggleBtn.classList.toggle('active', !!window.__creepEnabled);
+		creepToggleBtn.setAttribute('aria-pressed', !!window.__creepEnabled);
+		creepToggleBtn.style.justifyContent = 'flex-start';
+		creepToggleBtn.style.gap = '6px';
+		creepContainer.appendChild(creepToggleBtn);
+
+		// Wrapper holding the foldable creep settings (hidden until the button is opened)
+		const creepSettings = document.createElement('div');
+		creepSettings.id = 'creepSettings';
+		creepSettings.style.marginTop = '8px';
+		creepContainer.appendChild(creepSettings);
+
+		// Total amount
+		const creepAmountRow = document.createElement('div');
+		creepAmountRow.style.marginTop = '8px';
+		const creepAmountLabel = document.createElement('label');
+		creepAmountLabel.id = 'creepAmountLabel';
+		creepAmountLabel.textContent = 'Total Creep (mm)';
+		creepAmountLabel.title = 'Total pushout allowance across the signature depth. Distributed linearly between outermost and innermost sheets.';
+		Object.assign(creepAmountLabel.style, { display:'block', fontSize:'10px', marginBottom:'2px', color:'#ccc' });
+		const creepAmountInput = document.createElement('input');
+		creepAmountInput.type = 'number';
+		creepAmountInput.min = '-1000';
+		creepAmountInput.step = '0.01';
+		creepAmountInput.value = String(parseFloat(window.__creepTotal) || 0);
+		creepAmountInput.className = 'toolbox-input';
+		creepAmountInput.id = 'creepTotalInput';
+		creepAmountInput.oninput = applyCreepState;
+		creepAmountRow.appendChild(creepAmountLabel);
+		creepAmountRow.appendChild(creepAmountInput);
+		creepSettings.appendChild(creepAmountRow);
+
+		// Apply mode: distribute the value over depth, or fixed step per next sheet
+		const creepModeRow = document.createElement('div');
+		creepModeRow.style.marginTop = '8px';
+		const creepModeLabel = document.createElement('label');
+		creepModeLabel.textContent = 'Apply';
+		creepModeLabel.title = 'Total: entered mm is spread evenly over the N-1 steps between the first and last sheet of a signature. Per Sheet: every next sheet shifts by exactly this fixed step while the first sheet never moves.';
+		Object.assign(creepModeLabel.style, { display:'block', fontSize:'10px', marginBottom:'2px', color:'#ccc' });
+		const creepModeSelect = document.createElement('select');
+		creepModeSelect.id = 'creepModeSelect';
+		creepModeSelect.className = 'toolbox-input';
+		const optTotal = document.createElement('option');
+		optTotal.value = 'total';
+		optTotal.textContent = 'Total (Distributed)';
+		const optPerSheet = document.createElement('option');
+		optPerSheet.value = 'per-sheet';
+		optPerSheet.textContent = 'Per Sheet (First Fixed)';
+		creepModeSelect.appendChild(optTotal);
+		creepModeSelect.appendChild(optPerSheet);
+		creepModeSelect.value = (window.__creepMode === 'per-sheet') ? 'per-sheet' : 'total';
+		creepModeSelect.onchange = applyCreepState;
+		creepModeRow.appendChild(creepModeLabel);
+		creepModeRow.appendChild(creepModeSelect);
+		creepSettings.appendChild(creepModeRow);
+
+		// Direction (which sheet is anchored / never moves)
+		const creepDirRow = document.createElement('div');
+		creepDirRow.style.marginTop = '8px';
+		const creepDirLabel = document.createElement('label');
+		creepDirLabel.textContent = 'Direction';
+		creepDirLabel.title = 'Choose which sheet of each signature stays in position. N-1 (default): inside (last / innermost) sheet is anchored and the shift grows outward. 1-N: first (outermost) sheet is anchored and the shift grows inward.';
+		Object.assign(creepDirLabel.style, { display:'block', fontSize:'10px', marginBottom:'2px', color:'#ccc' });
+		const creepDirSelect = document.createElement('select');
+		creepDirSelect.id = 'creepDirectionSelect';
+		creepDirSelect.className = 'toolbox-input';
+		const optN1 = document.createElement('option');
+		optN1.value = 'n-1';
+		optN1.textContent = 'N-1 (Inside Fixed)';
+		const opt1N = document.createElement('option');
+		opt1N.value = '1-n';
+		opt1N.textContent = '1-N (Outside Fixed)';
+		creepDirSelect.appendChild(optN1);
+		creepDirSelect.appendChild(opt1N);
+		creepDirSelect.value = (window.__creepDirection === '1-n') ? '1-n' : 'n-1';
+		creepDirSelect.onchange = applyCreepState;
+		creepDirRow.appendChild(creepDirLabel);
+		creepDirRow.appendChild(creepDirSelect);
+		creepSettings.appendChild(creepDirRow);
+
+		// Shift with slot frame
+		const creepFrameLabel = document.createElement('label');
+		Object.assign(creepFrameLabel.style, { display:'flex', alignItems:'center', gap:'6px', marginTop:'8px', cursor:'pointer', color:'#ccc', fontSize:'11px' });
+		const creepFrameCheck = document.createElement('input');
+		creepFrameCheck.type = 'checkbox';
+		creepFrameCheck.id = 'creepWithFrameCheck';
+		creepFrameCheck.checked = !!window.__creepWithFrame;
+		creepFrameCheck.title = 'Shift the slot frame together with the content. On (default): the whole slot box moves with the creep amount. Off: only the page content moves (grid / crop marks stay).';
+		creepFrameCheck.onchange = applyCreepState;
+		creepFrameLabel.appendChild(creepFrameCheck);
+		creepFrameLabel.appendChild(document.createTextNode('Shift Slot Frame Together'));
+		creepSettings.appendChild(creepFrameLabel);
+
+		// Status
+		const creepStatusInfo = document.createElement('div');
+		creepStatusInfo.id = 'creepStatusInfo';
+		Object.assign(creepStatusInfo.style, { fontSize:'10px', color:'#aaa', marginTop:'4px' });
+		creepStatusInfo.textContent = 'No booklet or N-up imposition detected';
+		creepSettings.appendChild(creepStatusInfo);
+
+		// Initial fold state: match the saved creep-enabled state, and sync the icon
+		const creepIconInit = creepToggleBtn.querySelector('.material-icons');
+		if(creepIconInit) creepIconInit.textContent = window.__creepEnabled ? 'expand_less' : 'chevron_right';
+		if(!window.__creepEnabled) creepSettings.style.display = 'none';
+
+		_ltContentData.appendChild(creepContainer);
+		updateCreepAmountLabel();
+		window.updateCreepStatus();
 
 		dataFileInput.addEventListener('change', async (e) => {
 			const file = e.target.files[0];
@@ -1231,6 +1582,7 @@
 							headers: rows[0],
 							rows: rows.slice(1).filter(r => r.length > 0 && (r.length > 1 || r[0] !== ''))
 						};
+						window.__mergeEnabled = true;
 						dataFileInfo.textContent = `${file.name} (${window.__mergeData.rows.length} records)`;
 						renderDataMergeCards();
 					}
@@ -1245,6 +1597,7 @@
 								headers: rows[0],
 								rows: rows.slice(1)
 							};
+						window.__mergeEnabled = true;
 							dataFileInfo.textContent = `${file.name} (${window.__mergeData.rows.length} records)`;
 							renderDataMergeCards();
 						}
@@ -1278,6 +1631,19 @@
 		window.renderDataMergeCards = () => {
 			dataFieldsContainer.innerHTML = '';
 			if(!window.__mergeData || !window.__mergeData.headers) return;
+
+			sourceRow.style.display = 'flex';
+			dataFileInfo.style.display = 'block';
+			dataFileInfo.textContent = window.__mergeData.fileName ? `Loaded: ${window.__mergeData.fileName} (${window.__mergeData.rows.length} rows)` : `${window.__mergeData.rows.length} rows loaded`;
+			// Only force the fold open when merge is enabled (avoid re-opening on close)
+			if(window.__mergeEnabled){
+				if(dataSettings) dataSettings.style.display = 'block';
+				if(dataFileBtn){
+					dataFileBtn.classList.add('active');
+					dataFileBtn.setAttribute('aria-pressed', 'true');
+				}
+				if(dataChevron) dataChevron.textContent = 'expand_less';
+			}
 
 			window.__mergeData.headers.forEach((header, colIndex) => {
 				if(!header) return;
@@ -1435,47 +1801,647 @@
 
 		const header = document.createElement('h3');
 		header.textContent = 'Data Overlays';
-		ltContentData.appendChild(header);
+		_ltContentData.appendChild(header);
 
 		const addBtn = window.createToolboxBtn('add', 'Add Square Overlay');
 		addBtn.style.width = 'auto';
 		addBtn.style.marginBottom = '10px';
-		ltContentData.appendChild(addBtn);
+		_ltContentData.appendChild(addBtn);
 
 		const addNumBtn = window.createToolboxBtn('looks_one', 'Add Numbering');
 		addNumBtn.style.width = 'auto';
 		addNumBtn.style.marginBottom = '10px';
-		ltContentData.appendChild(addNumBtn);
+		_ltContentData.appendChild(addNumBtn);
 
 		const addFileNameBtn = window.createToolboxBtn('description', 'Add File Name');
 		addFileNameBtn.style.width = 'auto';
 		addFileNameBtn.style.marginBottom = '10px';
-		ltContentData.appendChild(addFileNameBtn);
+		_ltContentData.appendChild(addFileNameBtn);
 
 		const addColorBarBtn = window.createToolboxBtn('palette', 'Add Color Bar');
 		addColorBarBtn.style.width = 'auto';
 		addColorBarBtn.style.marginBottom = '10px';
-		ltContentData.appendChild(addColorBarBtn);
+		_ltContentData.appendChild(addColorBarBtn);
 
 		const addDuplexBtn = window.createToolboxBtn('center_focus_strong', 'Add Duplex Mark');
 		addDuplexBtn.style.width = 'auto';
 		addDuplexBtn.style.marginBottom = '10px';
-		ltContentData.appendChild(addDuplexBtn);
+		_ltContentData.appendChild(addDuplexBtn);
+
+		const addFrameBtn = window.createToolboxBtn('crop_din', 'Add Frame Overlay');
+		addFrameBtn.style.width = 'auto';
+		addFrameBtn.style.marginBottom = '10px';
+		_ltContentData.appendChild(addFrameBtn);
+
+		const addBleedBtn = window.createToolboxBtn('fullscreen_exit', 'Add Bleed Overlay');
+		addBleedBtn.style.width = 'auto';
+		addBleedBtn.style.marginBottom = '10px';
+		_ltContentData.appendChild(addBleedBtn);
+
+		const addSizeBtn = window.createToolboxBtn('straighten', 'Add Size Overlay');
+		addSizeBtn.style.width = 'auto';
+		addSizeBtn.style.marginBottom = '10px';
+		_ltContentData.appendChild(addSizeBtn);
+
+		const addSafetyBtn = window.createToolboxBtn('security', 'Add Safety Overlay');
+		addSafetyBtn.style.width = 'auto';
+		addSafetyBtn.style.marginBottom = '10px';
+		_ltContentData.appendChild(addSafetyBtn);
 
 		const addSigMarkBtn = window.createToolboxBtn('bookmark_border', 'Add Signature Mark');
 		addSigMarkBtn.style.width = 'auto';
 		addSigMarkBtn.style.marginBottom = '10px';
 		addSigMarkBtn.disabled = true;
 		addSigMarkBtn.style.opacity = '0.5';
-		ltContentData.appendChild(addSigMarkBtn);
+		_ltContentData.appendChild(addSigMarkBtn);
 
 		const overlaysContainer = document.createElement('div');
 		overlaysContainer.style.display = 'flex';
 		overlaysContainer.style.flexDirection = 'column';
 		overlaysContainer.style.gap = '10px';
-		ltContentData.appendChild(overlaysContainer);
+	_ltContentData.appendChild(overlaysContainer);
 
-		const saveOverlays = () => {
+	// --- Preview Color Plugin Section ---
+	const previewColorHeader = document.createElement('h3');
+	previewColorHeader.textContent = 'Preview Color';
+	previewColorHeader.style.marginTop = '16px';
+	_ltContentData.appendChild(previewColorHeader);
+
+	const previewColorToggleBtn = window.createToolboxBtn(
+		'chevron_right', 'Preview Color',
+		() => {
+			const open = previewColorToggleBtn.classList.toggle('active');
+			previewColorToggleBtn.setAttribute('aria-pressed', open);
+			const icon = previewColorToggleBtn.querySelector('.material-icons');
+			if (icon) icon.textContent = open ? 'expand_less' : 'chevron_right';
+			if (previewColorSettingsPanel) previewColorSettingsPanel.style.display = open ? 'block' : 'none';
+			// Activate/deactivate color preview filters
+			const canvases = document.querySelectorAll('.preview-page-layer canvas, .preview-page-layer embed');
+			if(open){
+				if(iccProfileSelect && iccProfileSelect.value){
+					iccProfileSelect.dispatchEvent(new Event('change'));
+				} else if (typeof updateVisualFilters === 'function') {
+					updateVisualFilters();
+				}
+			} else {
+				window.__previewProfileFilter = '';
+				canvases.forEach(el => el.style.filter = '');
+			}
+		},
+		'Show/Hide Preview Color settings. Opening the panel also activates color preview filters.'
+	);
+	previewColorToggleBtn.style.justifyContent = 'flex-start';
+	previewColorToggleBtn.style.gap = '6px';
+	_ltContentData.appendChild(previewColorToggleBtn);
+
+	const previewColorSettingsPanel = document.createElement('div');
+	previewColorSettingsPanel.style.marginTop = '8px';
+	previewColorSettingsPanel.style.display = 'none';
+
+
+		// Preview Profile
+		const pcProfileLabel = document.createElement('label');
+		pcProfileLabel.style.display = 'block';
+		pcProfileLabel.style.fontSize = '10px';
+		pcProfileLabel.style.marginBottom = '2px';
+		pcProfileLabel.style.color = '#ccc';
+		pcProfileLabel.textContent = 'Preview Profile';
+		previewColorSettingsPanel.appendChild(pcProfileLabel);
+
+		const pcProfileRow = document.createElement('div');
+		pcProfileRow.style.display = 'flex';
+		pcProfileRow.style.gap = '5px';
+		pcProfileRow.style.marginBottom = '4px';
+		const iccProfileSelect = document.createElement('select');
+		iccProfileSelect.id = 'iccProfileSelect';
+		iccProfileSelect.className = 'toolbox-input';
+		iccProfileSelect.style.flex = '1';
+		['sRGB (Default)', 'Fix CMYK (Boost Saturation)', 'Simulate Print (Matte)', 'Simulate Print (Gloss)', 'Adobe RGB (Simulated)', 'Apple RGB (Simulated)', 'Grayscale', 'Sepia', 'Invert Colors'].forEach((label, i) => {
+			const opt = document.createElement('option');
+			opt.value = ['srgb', 'fix-cmyk', 'sim-print', 'sim-gloss', 'adobe-rgb', 'apple-rgb', 'grayscale', 'sepia', 'invert'][i];
+			opt.textContent = label;
+			if (i === 0) opt.selected = true;
+			iccProfileSelect.appendChild(opt);
+		});
+		pcProfileRow.appendChild(iccProfileSelect);
+		const saveProfileBtn = document.createElement('button');
+		saveProfileBtn.id = 'saveProfileBtn';
+		saveProfileBtn.className = 'toolbox-btn';
+		saveProfileBtn.style.width = 'auto';
+		saveProfileBtn.style.padding = '0 6px';
+		saveProfileBtn.title = 'Save Profile';
+		saveProfileBtn.textContent = '+';
+		pcProfileRow.appendChild(saveProfileBtn);
+		const deleteProfileBtn = document.createElement('button');
+		deleteProfileBtn.id = 'deleteProfileBtn';
+		deleteProfileBtn.className = 'toolbox-btn';
+		deleteProfileBtn.style.width = 'auto';
+		deleteProfileBtn.style.padding = '0 6px';
+		deleteProfileBtn.title = 'Delete Profile';
+		deleteProfileBtn.textContent = '-';
+		pcProfileRow.appendChild(deleteProfileBtn);
+			previewColorSettingsPanel.appendChild(pcProfileRow);
+
+	// CIELAB Correction
+	const pcLabLabel = document.createElement('label');
+	pcLabLabel.style.display = 'block';
+	pcLabLabel.style.fontSize = '10px';
+	pcLabLabel.style.marginTop = '8px';
+	pcLabLabel.style.marginBottom = '2px';
+	pcLabLabel.style.color = '#ccc';
+	pcLabLabel.textContent = 'CIELAB Correction';
+	previewColorSettingsPanel.appendChild(pcLabLabel);
+
+	const labLSlider = document.createElement('input');
+	labLSlider.id = 'labLSlider';
+	labLSlider.type = 'range';
+	labLSlider.min = '-50';
+	labLSlider.max = '50';
+	labLSlider.value = '0';
+	labLSlider.className = 'toolbox-slider';
+	labLSlider.style.flex = '1';
+	labLSlider.title = 'Lightness';
+	const labLRow = document.createElement('div');
+	labLRow.style.display = 'flex';
+	labLRow.style.gap = '5px';
+	labLRow.style.alignItems = 'center';
+	labLRow.style.marginBottom = '4px';
+	const labLSpan = document.createElement('span');
+	labLSpan.style.fontSize = '10px';
+	labLSpan.style.color = '#888';
+	labLSpan.style.width = '10px';
+	labLSpan.textContent = 'L';
+	labLRow.appendChild(labLSpan);
+	labLRow.appendChild(labLSlider);
+	previewColorSettingsPanel.appendChild(labLRow);
+
+	const labASlider = document.createElement('input');
+	labASlider.id = 'labASlider';
+	labASlider.type = 'range';
+	labASlider.min = '-50';
+	labASlider.max = '50';
+	labASlider.value = '0';
+	labASlider.className = 'toolbox-slider';
+	labASlider.style.flex = '1';
+	labASlider.title = 'Green - Red';
+	const labARow = document.createElement('div');
+	labARow.style.display = 'flex';
+	labARow.style.gap = '5px';
+	labARow.style.alignItems = 'center';
+	labARow.style.marginBottom = '4px';
+	const labASpan = document.createElement('span');
+	labASpan.style.fontSize = '10px';
+	labASpan.style.color = '#888';
+	labASpan.style.width = '10px';
+	labASpan.textContent = 'A';
+	labARow.appendChild(labASpan);
+	labARow.appendChild(labASlider);
+	previewColorSettingsPanel.appendChild(labARow);
+
+	const labBSlider = document.createElement('input');
+	labBSlider.id = 'labBSlider';
+	labBSlider.type = 'range';
+	labBSlider.min = '-50';
+	labBSlider.max = '50';
+	labBSlider.value = '0';
+	labBSlider.className = 'toolbox-slider';
+	labBSlider.style.flex = '1';
+	labBSlider.title = 'Blue - Yellow';
+	const labBRow = document.createElement('div');
+	labBRow.style.display = 'flex';
+	labBRow.style.gap = '5px';
+	labBRow.style.alignItems = 'center';
+	labBRow.style.marginBottom = '4px';
+	const labBSpan = document.createElement('span');
+	labBSpan.style.fontSize = '10px';
+	labBSpan.style.color = '#888';
+	labBSpan.style.width = '10px';
+	labBSpan.textContent = 'B';
+	labBRow.appendChild(labBSpan);
+	labBRow.appendChild(labBSlider);
+	previewColorSettingsPanel.appendChild(labBRow);
+
+	const resetLabBtn = document.createElement('button');
+	resetLabBtn.id = 'resetLabBtn';
+	resetLabBtn.className = 'toolbox-btn';
+	resetLabBtn.style.fontSize = '10px';
+	resetLabBtn.style.padding = '2px';
+	resetLabBtn.style.marginBottom = '4px';
+	resetLabBtn.textContent = 'Reset LAB';
+		previewColorSettingsPanel.appendChild(resetLabBtn);
+
+	// Contrast & Saturation
+	const pcContrastLabel = document.createElement('label');
+	pcContrastLabel.style.display = 'block';
+	pcContrastLabel.style.fontSize = '10px';
+	pcContrastLabel.style.marginTop = '8px';
+	pcContrastLabel.style.marginBottom = '2px';
+	pcContrastLabel.style.color = '#ccc';
+	pcContrastLabel.textContent = 'Contrast & Saturation';
+	previewColorSettingsPanel.appendChild(pcContrastLabel);
+
+	const contrastSlider = document.createElement('input');
+	contrastSlider.id = 'contrastSlider';
+	contrastSlider.type = 'range';
+	contrastSlider.min = '0';
+	contrastSlider.max = '200';
+	contrastSlider.value = '100';
+	contrastSlider.className = 'toolbox-slider';
+	contrastSlider.style.flex = '1';
+	contrastSlider.title = 'Contrast';
+	const contrastRow = document.createElement('div');
+	contrastRow.style.display = 'flex';
+	contrastRow.style.gap = '5px';
+	contrastRow.style.alignItems = 'center';
+	contrastRow.style.marginBottom = '4px';
+	const contrastSpan = document.createElement('span');
+	contrastSpan.style.fontSize = '10px';
+	contrastSpan.style.color = '#888';
+	contrastSpan.style.width = '10px';
+	contrastSpan.textContent = 'C';
+	contrastRow.appendChild(contrastSpan);
+	contrastRow.appendChild(contrastSlider);
+	previewColorSettingsPanel.appendChild(contrastRow);
+
+	const saturationSlider = document.createElement('input');
+	saturationSlider.id = 'saturationSlider';
+	saturationSlider.type = 'range';
+	saturationSlider.min = '0';
+	saturationSlider.max = '200';
+	saturationSlider.value = '100';
+	saturationSlider.className = 'toolbox-slider';
+	saturationSlider.style.flex = '1';
+	saturationSlider.title = 'Saturation';
+	const saturationRow = document.createElement('div');
+	saturationRow.style.display = 'flex';
+	saturationRow.style.gap = '5px';
+	saturationRow.style.alignItems = 'center';
+	saturationRow.style.marginBottom = '4px';
+	const saturationSpan = document.createElement('span');
+	saturationSpan.style.fontSize = '10px';
+	saturationSpan.style.color = '#888';
+	saturationSpan.style.width = '10px';
+	saturationSpan.textContent = 'S';
+	saturationRow.appendChild(saturationSpan);
+	saturationRow.appendChild(saturationSlider);
+	previewColorSettingsPanel.appendChild(saturationRow);
+
+	const resetContrastSatBtn = document.createElement('button');
+	resetContrastSatBtn.id = 'resetContrastSatBtn';
+	resetContrastSatBtn.className = 'toolbox-btn';
+	resetContrastSatBtn.style.fontSize = '10px';
+	resetContrastSatBtn.style.padding = '2px';
+	resetContrastSatBtn.style.marginBottom = '4px';
+	resetContrastSatBtn.textContent = 'Reset Contrast/Sat';
+	previewColorSettingsPanel.appendChild(resetContrastSatBtn);
+
+
+	// Curves (RGB)
+	const pcCurvesLabel = document.createElement('label');
+	pcCurvesLabel.style.display = 'block';
+	pcCurvesLabel.style.fontSize = '10px';
+	pcCurvesLabel.style.marginTop = '8px';
+	pcCurvesLabel.style.marginBottom = '2px';
+	pcCurvesLabel.style.color = '#ccc';
+	pcCurvesLabel.textContent = 'Curves (RGB)';
+	previewColorSettingsPanel.appendChild(pcCurvesLabel);
+
+	const curveChannelSelect = document.createElement('select');
+	curveChannelSelect.id = 'curveChannelSelect';
+	curveChannelSelect.className = 'toolbox-input';
+	curveChannelSelect.style.marginBottom = '4px';
+	[['master', 'Master (RGB)'], ['red', 'Red'], ['green', 'Green'], ['blue', 'Blue']].forEach(([val, label]) => {
+		const opt = document.createElement('option');
+		opt.value = val;
+		opt.textContent = label;
+		curveChannelSelect.appendChild(opt);
+	});
+	previewColorSettingsPanel.appendChild(curveChannelSelect);
+
+	const curveShadowSlider = document.createElement('input');
+	curveShadowSlider.id = 'curveShadowSlider';
+	curveShadowSlider.type = 'range';
+	curveShadowSlider.min = '0';
+	curveShadowSlider.max = '100';
+	curveShadowSlider.value = '25';
+	curveShadowSlider.className = 'toolbox-slider';
+	curveShadowSlider.style.flex = '1';
+	const curveShadowRow = document.createElement('div');
+	curveShadowRow.style.display = 'flex';
+	curveShadowRow.style.gap = '5px';
+	curveShadowRow.style.alignItems = 'center';
+	curveShadowRow.style.marginBottom = '2px';
+	const curveShadowSpan = document.createElement('span');
+	curveShadowSpan.style.fontSize = '9px';
+	curveShadowSpan.style.color = '#888';
+	curveShadowSpan.style.width = '20px';
+	curveShadowSpan.textContent = '25%';
+	curveShadowRow.appendChild(curveShadowSpan);
+	curveShadowRow.appendChild(curveShadowSlider);
+	previewColorSettingsPanel.appendChild(curveShadowRow);
+
+	const curveMidSlider = document.createElement('input');
+	curveMidSlider.id = 'curveMidSlider';
+	curveMidSlider.type = 'range';
+	curveMidSlider.min = '0';
+	curveMidSlider.max = '100';
+	curveMidSlider.value = '50';
+	curveMidSlider.className = 'toolbox-slider';
+	curveMidSlider.style.flex = '1';
+	const curveMidRow = document.createElement('div');
+	curveMidRow.style.display = 'flex';
+	curveMidRow.style.gap = '5px';
+	curveMidRow.style.alignItems = 'center';
+	curveMidRow.style.marginBottom = '2px';
+	const curveMidSpan = document.createElement('span');
+	curveMidSpan.style.fontSize = '9px';
+	curveMidSpan.style.color = '#888';
+	curveMidSpan.style.width = '20px';
+	curveMidSpan.textContent = '50%';
+	curveMidRow.appendChild(curveMidSpan);
+	curveMidRow.appendChild(curveMidSlider);
+	previewColorSettingsPanel.appendChild(curveMidRow);
+
+	const curveHighSlider = document.createElement('input');
+	curveHighSlider.id = 'curveHighSlider';
+	curveHighSlider.type = 'range';
+	curveHighSlider.min = '0';
+	curveHighSlider.max = '100';
+	curveHighSlider.value = '75';
+	curveHighSlider.className = 'toolbox-slider';
+	curveHighSlider.style.flex = '1';
+	const curveHighRow = document.createElement('div');
+	curveHighRow.style.display = 'flex';
+	curveHighRow.style.gap = '5px';
+	curveHighRow.style.alignItems = 'center';
+	curveHighRow.style.marginBottom = '4px';
+	const curveHighSpan = document.createElement('span');
+	curveHighSpan.style.fontSize = '9px';
+	curveHighSpan.style.color = '#888';
+	curveHighSpan.style.width = '20px';
+	curveHighSpan.textContent = '75%';
+	curveHighRow.appendChild(curveHighSpan);
+	curveHighRow.appendChild(curveHighSlider);
+	previewColorSettingsPanel.appendChild(curveHighRow);
+
+	const resetCurvesBtn = document.createElement('button');
+	resetCurvesBtn.id = 'resetCurvesBtn';
+	resetCurvesBtn.className = 'toolbox-btn';
+	resetCurvesBtn.style.fontSize = '10px';
+	resetCurvesBtn.style.padding = '2px';
+	resetCurvesBtn.textContent = 'Reset Curves';
+	previewColorSettingsPanel.appendChild(resetCurvesBtn);
+
+	// Frame Background (CMYK)
+	const pcBgHr = document.createElement('hr');
+	previewColorSettingsPanel.appendChild(pcBgHr);
+
+	const pcBgLabel = document.createElement('label');
+	pcBgLabel.style.display = 'block';
+	pcBgLabel.style.fontSize = '10px';
+	pcBgLabel.style.marginTop = '8px';
+	pcBgLabel.style.marginBottom = '2px';
+	pcBgLabel.style.color = '#ccc';
+	pcBgLabel.textContent = 'Frame Background (CMYK)';
+	previewColorSettingsPanel.appendChild(pcBgLabel);
+
+	const bgCSlider = document.createElement('input');
+	bgCSlider.id = 'bgCSlider';
+	bgCSlider.type = 'range';
+	bgCSlider.min = '0';
+	bgCSlider.max = '100';
+	bgCSlider.value = '0';
+	bgCSlider.className = 'toolbox-slider';
+	bgCSlider.style.flex = '1';
+	const bgCRow = document.createElement('div');
+	bgCRow.style.display = 'flex';
+	bgCRow.style.gap = '5px';
+	bgCRow.style.alignItems = 'center';
+	bgCRow.style.marginBottom = '2px';
+	const bgCSpan = document.createElement('span');
+	bgCSpan.style.fontSize = '9px';
+	bgCSpan.style.color = '#0cc';
+	bgCSpan.style.width = '10px';
+	bgCSpan.textContent = 'C';
+	bgCRow.appendChild(bgCSpan);
+	bgCRow.appendChild(bgCSlider);
+	previewColorSettingsPanel.appendChild(bgCRow);
+
+	const bgMSlider = document.createElement('input');
+	bgMSlider.id = 'bgMSlider';
+	bgMSlider.type = 'range';
+	bgMSlider.min = '0';
+	bgMSlider.max = '100';
+	bgMSlider.value = '0';
+	bgMSlider.className = 'toolbox-slider';
+	bgMSlider.style.flex = '1';
+	const bgMRow = document.createElement('div');
+	bgMRow.style.display = 'flex';
+	bgMRow.style.gap = '5px';
+	bgMRow.style.alignItems = 'center';
+	bgMRow.style.marginBottom = '2px';
+	const bgMSpan = document.createElement('span');
+	bgMSpan.style.fontSize = '9px';
+	bgMSpan.style.color = '#c0c';
+	bgMSpan.style.width = '10px';
+	bgMSpan.textContent = 'M';
+	bgMRow.appendChild(bgMSpan);
+	bgMRow.appendChild(bgMSlider);
+	previewColorSettingsPanel.appendChild(bgMRow);
+
+	const bgYSlider = document.createElement('input');
+	bgYSlider.id = 'bgYSlider';
+	bgYSlider.type = 'range';
+	bgYSlider.min = '0';
+	bgYSlider.max = '100';
+	bgYSlider.value = '0';
+	bgYSlider.className = 'toolbox-slider';
+	bgYSlider.style.flex = '1';
+	const bgYRow = document.createElement('div');
+	bgYRow.style.display = 'flex';
+	bgYRow.style.gap = '5px';
+	bgYRow.style.alignItems = 'center';
+	bgYRow.style.marginBottom = '2px';
+	const bgYSpan = document.createElement('span');
+	bgYSpan.style.fontSize = '9px';
+	bgYSpan.style.color = '#cc0';
+	bgYSpan.style.width = '10px';
+	bgYSpan.textContent = 'Y';
+	bgYRow.appendChild(bgYSpan);
+	bgYRow.appendChild(bgYSlider);
+	previewColorSettingsPanel.appendChild(bgYRow);
+
+	const bgKSlider = document.createElement('input');
+	bgKSlider.id = 'bgKSlider';
+	bgKSlider.type = 'range';
+	bgKSlider.min = '0';
+	bgKSlider.max = '100';
+	bgKSlider.value = '0';
+	bgKSlider.className = 'toolbox-slider';
+	bgKSlider.style.flex = '1';
+	const bgKRow = document.createElement('div');
+	bgKRow.style.display = 'flex';
+	bgKRow.style.gap = '5px';
+	bgKRow.style.alignItems = 'center';
+	bgKRow.style.marginBottom = '2px';
+	const bgKSpan = document.createElement('span');
+	bgKSpan.style.fontSize = '9px';
+	bgKSpan.style.color = '#888';
+	bgKSpan.style.width = '10px';
+	bgKSpan.textContent = 'K';
+	bgKRow.appendChild(bgKSpan);
+	bgKRow.appendChild(bgKSlider);
+	previewColorSettingsPanel.appendChild(bgKRow);
+
+	const bgTransparentCheckbox = document.createElement('input');
+	bgTransparentCheckbox.id = 'bgTransparentCheckbox';
+	bgTransparentCheckbox.type = 'checkbox';
+	bgTransparentCheckbox.checked = true;
+	const bgTransparentLabel = document.createElement('label');
+	bgTransparentLabel.style.display = 'flex';
+	bgTransparentLabel.style.alignItems = 'center';
+	bgTransparentLabel.style.gap = '4px';
+	bgTransparentLabel.style.marginTop = '4px';
+	bgTransparentLabel.style.fontSize = '10px';
+	bgTransparentLabel.style.color = '#ccc';
+	bgTransparentLabel.style.cursor = 'pointer';
+	bgTransparentLabel.appendChild(bgTransparentCheckbox);
+	bgTransparentLabel.appendChild(document.createTextNode(' Transparent Background'));
+	previewColorSettingsPanel.appendChild(bgTransparentLabel);
+
+		_ltContentData.appendChild(previewColorSettingsPanel);
+
+		const pluginsHeader = document.createElement('h3');
+	pluginsHeader.textContent = 'Plugins';
+	pluginsHeader.style.marginTop = '16px';
+	_ltContentData.appendChild(pluginsHeader);
+
+	const pluginsContainer = document.createElement('div');
+	pluginsContainer.style.display = 'flex';
+	pluginsContainer.style.flexDirection = 'column';
+	pluginsContainer.style.gap = '8px';
+	_ltContentData.appendChild(pluginsContainer);
+
+	const renderPluginOverlays = () => {
+		pluginsContainer.innerHTML = '';
+		if (!window.impositionfix || !window.impositionfix._overlays || !window.impositionfix._overlays.length) {
+			const empty = document.createElement('div');
+			empty.style.color = '#888';
+			empty.style.fontSize = '11px';
+			empty.textContent = 'No plugins loaded. Drop .js files into the plugins/ folder.';
+			pluginsContainer.appendChild(empty);
+			return;
+		}
+		window.impositionfix._overlays.forEach((o, i) => {
+			const pluginName = o.displayName || ((o._pluginName ? o._pluginName + ': ' : '') + (o.id || o.name || 'Plugin Overlay ' + (i + 1)));
+			const isOpen = false;
+			o.visible = false; // Start folded (disabled) by default
+
+			// Toggle button — same style as Creep Compensation
+			const toggleBtn = window.createToolboxBtn(
+				'chevron_right', pluginName,
+				() => {
+					const open = toggleBtn.classList.toggle('active');
+					o.visible = open;
+					toggleBtn.setAttribute('aria-pressed', open);
+					const icon = toggleBtn.querySelector('.material-icons');
+					if (icon) icon.textContent = open ? 'expand_less' : 'chevron_right';
+					if (settingsPanel) settingsPanel.style.display = open ? 'block' : 'none';
+					savePluginOverlays();
+					if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+					if(window.drawSheetOverlays) window.drawSheetOverlays();
+				},
+				'Show/Hide ' + pluginName + ' settings. Opening the panel also turns the overlay on; collapsing turns it off.'
+			);
+			toggleBtn.classList.toggle('active', isOpen);
+			toggleBtn.setAttribute('aria-pressed', isOpen);
+			toggleBtn.style.justifyContent = 'flex-start';
+			toggleBtn.style.gap = '6px';
+			pluginsContainer.appendChild(toggleBtn);
+
+			// Foldable settings panel (hidden until the button is opened)
+			const settingsPanel = document.createElement('div');
+			settingsPanel.style.marginTop = '8px';
+			if (!isOpen) settingsPanel.style.display = 'none';
+
+		const props = ['x', 'y', 'size'];
+		props.forEach(prop => {
+			if (o[prop] === undefined) return;
+			const wrap = document.createElement('div');
+			wrap.style.display = 'flex';
+			wrap.style.alignItems = 'center';
+			wrap.style.gap = '4px';
+			wrap.style.marginTop = '4px';
+
+			const lbl = document.createElement('label');
+			lbl.textContent = prop;
+			lbl.style.fontSize = '10px';
+			lbl.style.color = '#aaa';
+			lbl.style.minWidth = '20px';
+
+			const inp = document.createElement('input');
+			inp.type = 'number';
+			inp.className = 'toolbox-input';
+			inp.value = o[prop];
+			inp.style.width = '60px';
+			inp.style.height = '22px';
+			inp.oninput = (e) => {
+				o[prop] = parseFloat(e.target.value) || 0;
+				savePluginOverlays();
+				if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+				if(window.drawSheetOverlays) window.drawSheetOverlays();
+			};
+
+			wrap.appendChild(lbl);
+			wrap.appendChild(inp);
+			settingsPanel.appendChild(wrap);
+		});
+
+		// Custom plugin-provided settings UI: overlays may define
+		// renderSettings(panel) to render their own controls (CMYK sliders,
+		// dropdowns, etc.) inside the fold-out panel.
+		if (typeof o.renderSettings === 'function') {
+			try { o.renderSettings(settingsPanel); } catch (e) { console.error('Plugin settings error:', o.id || o.name, e); }
+		}
+
+		pluginsContainer.appendChild(settingsPanel);
+		});
+	};
+	window.__refreshPluginOverlaysUI = renderPluginOverlays;
+
+	const savePluginOverlays = () => {
+		if (!window.impositionfix || !window.impositionfix._overlays) return;
+		const state = window.impositionfix._overlays.map(o => ({ id: o.id, name: o.name, visible: o.visible, x: o.x, y: o.y, size: o.size }));
+		if(window.__saveSettingsEnabled){
+			localStorage.setItem('pdf_plugin_overlays', JSON.stringify(state));
+		}
+	};
+
+	if(window.__saveSettingsEnabled){
+		try {
+			const saved = localStorage.getItem('pdf_plugin_overlays');
+			if(saved) {
+				const state = JSON.parse(saved);
+				state.forEach(s => {
+					const ov = window.impositionfix._overlays.find(o => (o.id || o.name) === (s.id || s.name));
+					if (ov) {
+						ov.visible = s.visible;
+						if (s.x !== undefined) ov.x = s.x;
+						if (s.y !== undefined) ov.y = s.y;
+						if (s.size !== undefined) ov.size = s.size;
+					}
+				});
+			} else {
+				window.impositionfix._overlays.forEach(o => {
+					if (o.visible === undefined) o.visible = true;
+				});
+			}
+		} catch(e) { console.warn(e); }
+	}
+
+	renderPluginOverlays();
+
+	const saveOverlays = () => {
 			if(window.__saveSettingsEnabled){
 				localStorage.setItem('pdf_overlays', JSON.stringify(window.__overlays));
 			}
@@ -1505,13 +2471,19 @@
 			const savedOverlays = [];
 
 			window.__overlays.forEach((ov, i) => {
+				if(ov._pluginName) return; // Plugin overlays are shown in the Plugins section instead
 				if(!ov.name) {
-					let typeName = 'Overlay';
+					let typeName = 'Square';
 					if(ov.type === 'numbering') typeName = 'Numbering';
+					else if(ov.type === 'size') typeName = 'Size Info';
+					else if(ov.type === 'safety') typeName = 'Safety Area';
 					else if(ov.type === 'filename') typeName = 'File Name';
 					else if(ov.type === 'colorbar') typeName = 'Color Bar';
 					else if(ov.type === 'duplex') typeName = 'Duplex';
-					else if(ov.type === 'regmark') typeName = 'Reg. Mark';
+					else if(ov.type === 'frame') typeName = 'Frame';
+					else if(ov.type === 'bleed') typeName = 'Bleed';
+					else if(ov.type === 'sigmark') typeName = 'Sig. Mark';
+					else if(!ov.type) typeName = 'Square';
 					ov.name = `${typeName} ${i + 1}`;
 				}
 				if(ov.saved) {
@@ -2242,6 +3214,33 @@
 					row.appendChild(mkInp('Pos X', 'x', overlay.x));
 					row.appendChild(mkInp('Pos Y', 'y', overlay.y));
 
+				} else if (overlay.type === 'frame') {
+					const mkInp = (lbl, k, v) => {
+						const w = createInput(lbl, k, v);
+						w.querySelector('input').oninput = (e) => {
+							overlay[k] = parseFloat(e.target.value) || 0;
+							saveOverlays();
+							if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+						};
+						return w;
+					};
+					row.appendChild(mkInp('Thickness (mm)', 'thickness', overlay.thickness));
+					row.appendChild(mkInp('Offset (mm)', 'offset', overlay.offset));
+					row.appendChild(createCmykInput(overlay));
+					row.appendChild(createOpacityInput(overlay));
+
+				} else if (overlay.type === 'bleed') {
+					row.appendChild(createCmykInput(overlay));
+					row.appendChild(createOpacityInput(overlay));
+
+				} else if (overlay.type === 'size') {
+					row.appendChild(createCmykInput(overlay));
+					row.appendChild(createOpacityInput(overlay));
+
+				} else if (overlay.type === 'safety') {
+					row.appendChild(createCmykInput(overlay));
+					row.appendChild(createOpacityInput(overlay));
+
 				} else if (overlay.type === 'sigmark') {
 					const mkInp = (lbl, k, v) => {
 						const w = createInput(lbl, k, v);
@@ -2319,6 +3318,38 @@
 			if(window.drawSheetOverlays) window.drawSheetOverlays();
 		};
 
+		addFrameBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			window.__overlays.push({ type: 'frame', thickness: 0.2, offset: 0, cmyk: [0, 0, 0, 1], opacity: 1, facingPages: true });
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		addBleedBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			window.__overlays.push({ type: 'bleed', cmyk: [0, 1, 1, 0], opacity: 0.5, facingPages: true });
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		addSizeBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			window.__overlays.push({ type: 'size', cmyk: [0, 0, 0, 1], opacity: 1, facingPages: true });
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
+		addSafetyBtn.onclick = () => {
+			if(!window.__overlays) window.__overlays = [];
+			window.__overlays.push({ type: 'safety', cmyk: [0, 1, 1, 0], opacity: 0.8, facingPages: true });
+			saveOverlays();
+			renderOverlayInputs();
+			if(window.renderPages) window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		};
+
 		addSigMarkBtn.onclick = () => {
 			if(!window.__overlays) window.__overlays = [];
 			const n = parseInt(addSigMarkBtn.dataset.detectedN) || 16;
@@ -2387,40 +3418,155 @@
 
 	// wire UI: Right Toolbar Tabs
 	if (window.initStylesTab) window.initStylesTab();
+	if (window.initColorTab) window.initColorTab();
 
 	const rtTabTransform = document.getElementById('rtTabTransform');
 	const rtTabLayout = document.getElementById('rtTabLayout');
 	const rtTabStyles = document.getElementById('rtTabStyles');
+	const ltTabGrid = document.getElementById('ltTabGrid');
+	const ltTabData = document.getElementById('ltTabData');
 	const rtContentTransform = document.getElementById('rtContentTransform');
-	const rtContentLayout = document.getElementById('rtContentLayout');
+	const rtContentFrame = document.getElementById('rtContentFrame');
 	const rtContentStyles = document.getElementById('rtContentStyles');
+	const ltContentGrid = document.getElementById('ltContentGrid');
+	const ltContentData = document.getElementById('ltContentData');
 
-	if(rtTabTransform && rtTabLayout && rtContentTransform && rtContentLayout){
-		const tabs = [
-			{ btn: rtTabTransform, content: rtContentTransform },
-			{ btn: rtTabLayout, content: rtContentLayout },
-			{ btn: rtTabStyles, content: rtContentStyles }
-		];
+	const rtTabs = [
+		{ btn: rtTabTransform, content: rtContentTransform },
+		{ btn: rtTabLayout, content: rtContentFrame },
+		{ btn: rtTabStyles, content: rtContentStyles },
+		{ btn: rtTabColor, content: rtContentColor },
+		{ btn: ltTabGrid, content: ltContentGrid },
+		{ btn: ltTabData, content: ltContentData }
+	].filter(t => t.btn && t.content);
 
-		const setActive = (activeBtn) => {
-			tabs.forEach(t => {
-				if(!t.btn || !t.content) return;
-				if(t.btn === activeBtn){
-					t.btn.style.borderBottomColor = '#00bcd4';
-					t.btn.style.color = '#fff';
-					t.content.style.display = 'block';
-				} else {
-					t.btn.style.borderBottomColor = 'transparent';
-					t.btn.style.color = '#888';
-					t.content.style.display = 'none';
-				}
-			});
+	const setActive = (activeBtn) => {
+		rtTabs.forEach(t => {
+			if(!t.btn || !t.content) return;
+			if(t.btn === activeBtn){
+				t.btn.style.borderBottomColor = '#00bcd4';
+				t.btn.style.color = '#fff';
+				t.content.style.display = 'flex';
+			} else {
+				t.btn.style.borderBottomColor = 'transparent';
+				t.btn.style.color = '#888';
+				t.content.style.display = 'none';
+			}
+		});
+	};
+
+	rtTabs.forEach(t => {
+		if(t.btn) t.btn.addEventListener('click', () => setActive(t.btn));
+	});
+
+	// --- Resizable Divider for Right Toolbox ---
+	(function() {
+		const divider = document.getElementById('rightToolboxDivider');
+		const svg = document.getElementById('rightToolboxDividerSvg');
+		const container = divider ? divider.parentElement : null;
+		const topGroup = divider ? divider.previousElementSibling : null;
+		const bottomGroup = divider ? divider.nextElementSibling : null;
+
+		if (!divider || !svg || !topGroup || !bottomGroup || !container) return;
+
+		let isDragging = false;
+		let dragStartY = 0;
+		let dragStartTopHeight = 0;
+		let dragStartBottomHeight = 0;
+		let dragOffsetFromCenter = 0;
+
+		// Create wavy line SVG path with transparent ends
+		const drawWavyLine = (color = '#555') => {
+			const w = divider.offsetWidth || 260;
+			const h = divider.offsetHeight || 16;
+			const cy = h / 2;
+			const amp = 2;
+			const freq = 8;
+			const margin = 20;
+			
+			let d = `M ${margin} ${cy}`;
+			for (let x = margin; x <= w - margin; x += 2) {
+				const y = cy + Math.sin((x / freq) * Math.PI * 2) * amp;
+				d += ` L ${x} ${y}`;
+			}
+			
+			svg.innerHTML = `
+				<defs>
+					<linearGradient id="dividerGrad" x1="0" y1="0" x2="1" y2="0">
+						<stop offset="0%" stop-color="${color}" stop-opacity="0"/>
+						<stop offset="15%" stop-color="${color}" stop-opacity="1"/>
+						<stop offset="85%" stop-color="${color}" stop-opacity="1"/>
+						<stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+					</linearGradient>
+				</defs>
+				<path d="${d}" stroke="url(#dividerGrad)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+			`;
 		};
 
-		rtTabTransform.addEventListener('click', () => setActive(rtTabTransform));
-		rtTabLayout.addEventListener('click', () => setActive(rtTabLayout));
-		if(rtTabStyles) rtTabStyles.addEventListener('click', () => setActive(rtTabStyles));
-	}
+		// Initial draw
+		setTimeout(drawWavyLine, 50);
+		window.addEventListener('resize', () => drawWavyLine(isDragging ? '#00bcd4' : '#555'));
+
+		// Redraw on divider width change (e.g., toolbox resize)
+		const resizeObserver = new ResizeObserver(() => drawWavyLine(isDragging ? '#00bcd4' : '#555'));
+		resizeObserver.observe(divider);
+
+		divider.addEventListener('mouseenter', () => {
+			if (!isDragging) drawWavyLine('#00bcd4');
+		});
+		divider.addEventListener('mouseleave', () => {
+			if (!isDragging) drawWavyLine('#555');
+		});
+
+		divider.addEventListener('mousedown', (e) => {
+			isDragging = true;
+			dragStartY = e.clientY;
+			dragStartTopHeight = topGroup.getBoundingClientRect().height;
+			dragStartBottomHeight = bottomGroup.getBoundingClientRect().height;
+			// Remember where the user grabbed relative to divider center, so no jump on first move
+			const divRect = divider.getBoundingClientRect();
+			dragOffsetFromCenter = e.clientY - (divRect.top + divRect.height / 2);
+			e.preventDefault();
+			document.body.style.cursor = 'row-resize';
+			document.body.style.userSelect = 'none';
+			drawWavyLine('#00bcd4');
+		});
+
+		document.addEventListener('mousemove', (e) => {
+			if (!isDragging) return;
+			// Account for where the user grabbed on the divider
+			const dy = (e.clientY - dragOffsetFromCenter) - dragStartY;
+			const dividerHeight = divider.offsetHeight;
+			const minHeight = 50;
+			
+			let newTop = dragStartTopHeight + dy;
+			let newBottom = dragStartBottomHeight - dy;
+			
+			if (newTop < minHeight) {
+				newTop = minHeight;
+				newBottom = container.getBoundingClientRect().height - newTop - dividerHeight;
+			}
+			if (newBottom < minHeight) {
+				newBottom = minHeight;
+				newTop = container.getBoundingClientRect().height - newBottom - dividerHeight;
+			}
+
+			topGroup.style.flex = 'none';
+			topGroup.style.height = newTop + 'px';
+			bottomGroup.style.flex = 'none';
+			bottomGroup.style.height = newBottom + 'px';
+		});
+
+		document.addEventListener('mouseup', () => {
+			if (isDragging) {
+				isDragging = false;
+				dragOffsetFromCenter = 0;
+				document.body.style.cursor = '';
+				document.body.style.userSelect = '';
+				drawWavyLine('#555');
+			}
+		});
+	})();
 
 	// wire UI: n-up Tools Dropdown
 	const nupToolsBtn = document.getElementById('nupToolsBtn');
@@ -2451,7 +3597,7 @@
 
 	// wire UI: rotation input -> adjustContentRotation
 	if(rotationInput){
-		rotationInput.addEventListener('input', ()=>{
+		rotationInput.addEventListener('change', ()=>{
 			// Allow typing '-' without resetting to 0 immediately
 			if(rotationInput.value === '-' || rotationInput.value === '') return;
 			const v = parseFloat(rotationInput.value);
@@ -2487,7 +3633,7 @@
 			rotPageNum.style.display = rotPageCheck.checked ? 'inline-block' : 'none';
 			syncUI();
 		});
-		rotPageNum.addEventListener('input', ()=>{
+		rotPageNum.addEventListener('change', ()=>{
 			syncUI();
 		});
 	}
@@ -2506,6 +3652,22 @@
 
 	if(stretchImageBtn){
 		stretchImageBtn.addEventListener('click', () => window.applyFitToSelection('stretch'));
+	}
+
+	const fitImageBtnSlot = document.getElementById('fitImageBtnSlot');
+	const fillImageBtnSlot = document.getElementById('fillImageBtnSlot');
+	const stretchImageBtnSlot = document.getElementById('stretchImageBtnSlot');
+
+	if(fitImageBtnSlot){
+		fitImageBtnSlot.addEventListener('click', () => window.applyFitToSelection('fit'));
+	}
+
+	if(fillImageBtnSlot){
+		fillImageBtnSlot.addEventListener('click', () => window.applyFitToSelection('fill'));
+	}
+
+	if(stretchImageBtnSlot){
+		stretchImageBtnSlot.addEventListener('click', () => window.applyFitToSelection('stretch'));
 	}
 
 	// wire UI: scale slider -> adjustContentScale
@@ -2543,7 +3705,7 @@
 
 		const isSpecific = scalePageCheck && scalePageCheck.checked;
 		const pageNums = isSpecific ? parsePageRange(scalePageNum.value) : [];
-		const isUnlocked = (typeof unlockRatioCheckbox !== 'undefined' && unlockRatioCheckbox && unlockRatioCheckbox.checked);
+		const isUnlocked = !document.getElementById('transformProportionalCheckbox')?.checked;
 
 		if(isWidth){
 			// If unlocked, update X only. If locked, update both to maintain aspect ratio.
@@ -2556,13 +3718,13 @@
 		}
 	}
 	if(wIn) {
-		wIn.addEventListener('input', ()=> updateScaleFromMm(parseFloat(wIn.value), true));
+		wIn.addEventListener('change', ()=> updateScaleFromMm(parseFloat(wIn.value), true));
 		wIn.addEventListener('keydown', handleStep);
 		wIn.addEventListener('keyup', handleStep);
 		wIn.addEventListener('mousedown', handleStep);
 	}
 	if(hIn) {
-		hIn.addEventListener('input', ()=> updateScaleFromMm(parseFloat(hIn.value), false));
+		hIn.addEventListener('change', ()=> updateScaleFromMm(parseFloat(hIn.value), false));
 		hIn.addEventListener('keydown', handleStep);
 		hIn.addEventListener('keyup', handleStep);
 		hIn.addEventListener('mousedown', handleStep);
@@ -2571,7 +3733,7 @@
 	// wire UI: dpi input -> adjustPlacedPdfDpi
 	const dpiInput = document.getElementById('dpiInput');
 	if(dpiInput){
-		dpiInput.addEventListener('input', ()=>{
+		dpiInput.addEventListener('change', ()=>{
 			const v = parseInt(dpiInput.value,10) || 96;
 			window.adjustPlacedPdfDpi(v);
 		});
@@ -2589,7 +3751,7 @@
 
 	// wire UI: offset inputs
 	if(offsetXInput){
-		offsetXInput.addEventListener('input', ()=>{
+		offsetXInput.addEventListener('change', ()=>{
 			const pxPerMm = 96 / 25.4;
 			const x = (parseFloat(offsetXInput.value) || 0) * pxPerMm;
 			const pageNums = (offsetPageCheck && offsetPageCheck.checked) ? parsePageRange(offsetPageNum.value) : null;
@@ -2599,7 +3761,7 @@
 		offsetXInput.addEventListener('mousedown', handleStep);
 	}
 	if(offsetYInput){
-		offsetYInput.addEventListener('input', ()=>{
+		offsetYInput.addEventListener('change', ()=>{
 			const pxPerMm = 96 / 25.4;
 			const y = (parseFloat(offsetYInput.value) || 0) * pxPerMm;
 			const pageNums = (offsetPageCheck && offsetPageCheck.checked) ? parsePageRange(offsetPageNum.value) : null;
@@ -2612,14 +3774,116 @@
 	// wire UI: slot size inputs
 	const slotWIn = document.getElementById('slotWidthInput');
 	const slotHIn = document.getElementById('slotHeightInput');
+	const slotScaleIn = document.getElementById('slotScalePercentInput');
+
 	if(slotWIn){
-		slotWIn.addEventListener('input', window.updateSlotSizeFromInputs);
+		slotWIn.addEventListener('change', () => window.updateSlotSizeFromInputs('w'));
 		slotWIn.addEventListener('mousedown', handleStep);
 	}
 	if(slotHIn){
-		slotHIn.addEventListener('input', window.updateSlotSizeFromInputs);
+		slotHIn.addEventListener('change', () => window.updateSlotSizeFromInputs('h'));
 		slotHIn.addEventListener('mousedown', handleStep);
 	}
+	if(slotScaleIn){
+		slotScaleIn.addEventListener('change', () => window.updateSlotSizeFromInputs('scale'));
+		slotScaleIn.addEventListener('mousedown', handleStep);
+	}
+
+	const linkSlotScaleCheckbox = document.getElementById('linkSlotScaleCheckbox');
+	if(linkSlotScaleCheckbox){
+		linkSlotScaleCheckbox.addEventListener('click', () => {
+			const isActive = linkSlotScaleCheckbox.classList.toggle('active');
+			linkSlotScaleCheckbox.setAttribute('aria-pressed', isActive);
+
+			if (isActive) {
+				// "Scale Content With Frame" ON: preserve global fit modes,
+				// do NOT set window.__fitToPage = true (avoid auto-fit to page)
+				// Proportional scaling with frame resizing happens naturally
+			} else {
+				// "Scale Content With Frame" OFF: stop proportional scaling with the
+				// frame, but keep global fit modes (Fit/Fill/Stretch) untouched so the
+				// corresponding toolbar buttons do not get un-toggled.
+
+				window.__proportionalScale = null;
+
+				if (window.__slotTransforms) {
+					Object.values(window.__slotTransforms).forEach(t => {
+						delete t.proportionalScale;
+					});
+				}
+				if (window.__pageTransforms) {
+					Object.values(window.__pageTransforms).forEach(t => {
+						delete t.proportionalScale;
+					});
+				}
+			}
+
+			if(window.syncSelectionToUI) window.syncSelectionToUI();
+		});
+	}
+
+	// wire UI: slot proportional toggle (icon between X/Y inputs)
+	const propToggle = document.getElementById('slotProportionalToggle');
+	const propCheckbox = document.getElementById('slotProportionalCheckbox');
+	if(propToggle && propCheckbox){
+		propToggle.addEventListener('click', () => {
+			propCheckbox.checked = !propCheckbox.checked;
+			propCheckbox.dispatchEvent(new Event('change'));
+			// Enforce proportionality immediately when the lock is engaged
+			if(propCheckbox.checked && window.updateSlotSizeFromInputs){
+				window.updateSlotSizeFromInputs('w');
+			}
+		});
+		propCheckbox.addEventListener('change', () => {
+			propToggle.textContent = propCheckbox.checked ? 'link' : 'link_off';
+			propToggle.style.color = propCheckbox.checked ? '#00bcd4' : '#888';
+		});
+		// Sync initial visual state
+		propCheckbox.dispatchEvent(new Event('change'));
+	}
+
+	// wire UI: transform proportional toggle
+	const transPropToggle = document.getElementById('transformProportionalToggle');
+	const transPropCheckbox = document.getElementById('transformProportionalCheckbox');
+	if(transPropToggle && transPropCheckbox){
+		transPropToggle.addEventListener('click', () => {
+			transPropCheckbox.checked = !transPropCheckbox.checked;
+			transPropCheckbox.dispatchEvent(new Event('change'));
+			if(transPropCheckbox.checked && wIn) wIn.dispatchEvent(new Event('change'));
+		});
+		transPropCheckbox.addEventListener('change', () => {
+			transPropToggle.textContent = transPropCheckbox.checked ? 'link' : 'link_off';
+			transPropToggle.style.color = transPropCheckbox.checked ? '#00bcd4' : '#888';
+		});
+		transPropCheckbox.dispatchEvent(new Event('change'));
+	}
+
+	// Helper for Grid/Bleed Linked Inputs
+	function setupLinkToggle(toggleId, checkboxId, input1Id, input2Id) {
+		const toggle = document.getElementById(toggleId);
+		const checkbox = document.getElementById(checkboxId);
+		const in1 = document.getElementById(input1Id);
+		const in2 = document.getElementById(input2Id);
+		if(!toggle || !checkbox || !in1 || !in2) return;
+
+		toggle.addEventListener('click', () => {
+			checkbox.checked = !checkbox.checked;
+			checkbox.dispatchEvent(new Event('change'));
+			if(checkbox.checked) { in2.value = in1.value; in2.dispatchEvent(new Event('change')); }
+		});
+		checkbox.addEventListener('change', () => {
+			toggle.textContent = checkbox.checked ? 'link' : 'link_off';
+			toggle.style.color = checkbox.checked ? '#00bcd4' : '#888';
+		});
+		checkbox.dispatchEvent(new Event('change'));
+
+		in1.addEventListener('input', () => { if(checkbox.checked) { in2.value = in1.value; in2.dispatchEvent(new Event('change')); } });
+		in2.addEventListener('input', () => { if(checkbox.checked) { in1.value = in2.value; in1.dispatchEvent(new Event('change')); } });
+	}
+
+	setupLinkToggle('markGapProportionalToggle', 'markGapProportionalCheckbox', 'markGapXInput', 'markGapYInput');
+	setupLinkToggle('cropBleedProportionalToggle', 'cropBleedProportionalCheckbox', 'cropBleedXInput', 'cropBleedYInput');
+	setupLinkToggle('innerCropBleedProportionalToggle', 'innerCropBleedProportionalCheckbox', 'innerCropBleedXInput', 'innerCropBleedYInput');
 
 	// wire UI: offset sliders
 	if(offsetXSlider){
@@ -2647,14 +3911,14 @@
 			offsetPageNum.style.display = offsetPageCheck.checked ? 'inline-block' : 'none';
 			syncUI();
 		});
-		offsetPageNum.addEventListener('input', ()=>{
+		offsetPageNum.addEventListener('change', ()=>{
 			syncUI();
 		});
 	}
 
 	// wire UI: box position inputs
 	if(boxXInput){
-		boxXInput.addEventListener('input', ()=>{
+		boxXInput.addEventListener('change', ()=>{
 			const pxPerMm = 96 / 25.4;
 			const x = (parseFloat(boxXInput.value) || 0) * pxPerMm;
 			const pageNums = (slotPageCheck && slotPageCheck.checked) ? parsePageRange(slotPageNum.value) : null;
@@ -2663,7 +3927,7 @@
 		boxXInput.addEventListener('mousedown', handleStep);
 	}
 	if(boxYInput){
-		boxYInput.addEventListener('input', ()=>{
+		boxYInput.addEventListener('change', ()=>{
 			const pxPerMm = 96 / 25.4;
 			const y = (parseFloat(boxYInput.value) || 0) * pxPerMm;
 			const pageNums = (slotPageCheck && slotPageCheck.checked) ? parsePageRange(slotPageNum.value) : null;
@@ -2705,7 +3969,7 @@
 			slotPageNum.style.display = slotPageCheck.checked ? 'inline-block' : 'none';
 			syncUI();
 		});
-		slotPageNum.addEventListener('input', ()=>{
+		slotPageNum.addEventListener('change', ()=>{
 			syncUI();
 		});
 	}
@@ -2714,6 +3978,25 @@
 	const updateGrid = () => {
 		const r = parseInt(rowsInput.value) || 1;
 		const c = parseInt(colsInput.value) || 1;
+
+		// Only update sheet size if "Match Sheet to Grid" toggle is active
+		const matchPageSizeBtn = document.getElementById('matchPageSizeBtn');
+		if (matchPageSizeBtn && matchPageSizeBtn.classList.contains('active')) {
+			const pxPerMm = 96 / 25.4;
+			const trimW = window.__trimW || 0;
+			const trimH = window.__trimH || 0;
+			const l = window.__expandL || 0;
+			const r_exp = window.__expandR || 0;
+			const t = window.__expandT || 0;
+			const b = window.__expandB || 0;
+			if (trimW > 0 && trimH > 0 && sheetWidthInput && sheetHeightInput) {
+				sheetWidthInput.value = (((c * trimW) + l + r_exp) / pxPerMm).toFixed(2);
+				sheetHeightInput.value = (((r * trimH) + t + b) / pxPerMm).toFixed(2);
+				if (window.updateSheetSize) window.updateSheetSize();
+				return; // updateSheetSize handles subsequent grid and page rendering
+			}
+		}
+
 		if(window.generatePreviewGrid) window.generatePreviewGrid(r, c);
 		// Re-render content
 		const rot = window.__currentRotation || 0;
@@ -2732,7 +4015,7 @@
 
 	// wire UI: skew inputs
 	if(skewXInput){
-		skewXInput.addEventListener('input', ()=>{
+		skewXInput.addEventListener('change', ()=>{
 			const x = parseFloat(skewXInput.value) || 0;
 			const pageNums = (skewPageCheck && skewPageCheck.checked) ? parsePageRange(skewPageNum.value) : null;
 			if(skewXSlider) skewXSlider.value = x;
@@ -2741,7 +4024,7 @@
 		skewXInput.addEventListener('mousedown', handleStep);
 	}
 	if(skewYInput){
-		skewYInput.addEventListener('input', ()=>{
+		skewYInput.addEventListener('change', ()=>{
 			const y = parseFloat(skewYInput.value) || 0;
 			const pageNums = (skewPageCheck && skewPageCheck.checked) ? parsePageRange(skewPageNum.value) : null;
 			if(skewYSlider) skewYSlider.value = y;
@@ -2774,13 +4057,33 @@
 			skewPageNum.style.display = skewPageCheck.checked ? 'inline-block' : 'none';
 			syncUI();
 		});
-		skewPageNum.addEventListener('input', ()=>{
+		skewPageNum.addEventListener('change', ()=>{
 			syncUI();
 		});
 	}
 
 	// wire UI: Print button
 	const triggerBrowserPrint = async () => {
+		// Set print orientation based on sheet aspect ratio
+		const page = document.querySelector('.page');
+		const oldStyle = document.getElementById('print-orientation-style');
+		if(oldStyle) oldStyle.remove();
+
+		if (page) {
+			const style = document.createElement('style');
+			style.id = 'print-orientation-style';
+			
+			// Prefer explicit dimensions (e.g. "320mm") for @page size to ensure correct paper selection
+			if(page.style.width && page.style.height && page.style.width.endsWith('mm')){
+				style.innerHTML = `@page { size: ${page.style.width} ${page.style.height}; margin: 0; }`;
+			} else {
+				const w = page.offsetWidth;
+				const h = page.offsetHeight;
+				style.innerHTML = `@page { size: ${w > h ? 'landscape' : 'portrait'}; margin: 0; }`;
+			}
+			document.head.appendChild(style);
+		}
+
 		// If in native mode, switch to canvas for printing to ensure all pages/boxes render correctly
 		if(window.__renderNative){
 			const wasNative = true;
@@ -2826,6 +4129,10 @@
 	const refreshCrops = () => { 
 		if(window.drawSheetCropMarks) window.drawSheetCropMarks(); 
 		if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
+		// Refresh pages to update the Bleed Overlay visualization live
+		if(window.renderPages) {
+			window.renderPages(window.__currentRotation||0, {x: window.__currentScaleX||1, y: window.__currentScaleY||1}, {x: window.__offsetX||0, y: window.__offsetY||0});
+		}
 	};
 	['markGapXInput', 'markGapYInput', 'cropBleedXInput', 'cropBleedYInput', 'innerCropBleedXInput', 'innerCropBleedYInput', 'innerCropStyleSelect'].forEach(id => {
 		const el = document.getElementById(id);
@@ -3016,7 +4323,10 @@
 	const setInputsFromSelection = () => {
 		if(!paperSelect || !sheetWidthInput || !sheetHeightInput) return;
 		const val = paperSelect.value;
-		if(!val) return;
+		if(!val || val === 'custom') {
+			matchPageSizeBtn?.classList.remove('active');
+			return;
+		}
 		let [w, h] = val.split(',').map(Number);
 		
 		// Respect current orientation button state if possible
@@ -3041,6 +4351,22 @@
 		
 		if(sheetW <= 0 || sheetH <= 0) return;
 
+		// Sync paperSelect dropdown: set to 'custom' if dimensions don't match presets
+		if (paperSelect && document.activeElement !== paperSelect) {
+			const currentVal = `${sheetW},${sheetH}`;
+			const currentValAlt = `${sheetH},${sheetW}`;
+			let matched = false;
+			for (let i = 0; i < paperSelect.options.length; i++) {
+				const opt = paperSelect.options[i];
+				if (opt.value === currentVal || opt.value === currentValAlt) {
+					paperSelect.selectedIndex = i;
+					matched = true;
+					break;
+				}
+			}
+			if (!matched) paperSelect.value = 'custom';
+		}
+
 		const sheets = document.querySelectorAll('.page');
 		sheets.forEach(sheet => {
 			sheet.style.width = sheetW + 'mm';
@@ -3060,10 +4386,12 @@
 
 		// Recalculate grid fit
 		const autoGridCheck = document.getElementById('autoGridCheck');
-		const allowAutoFit = autoGridCheck ? autoGridCheck.checked : (!document.getElementById('layoutSelect') || document.getElementById('layoutSelect').value === 'Default');
+		const matchPageSizeBtn = document.getElementById('matchPageSizeBtn');
+		const isMatchingSheet = matchPageSizeBtn && matchPageSizeBtn.classList.contains('active');
+		const allowAutoFit = !isMatchingSheet && (autoGridCheck ? autoGridCheck.checked : (!document.getElementById('layoutSelect') || document.getElementById('layoutSelect').value === 'Default'));
 		
-		if(allowAutoFit && window.calculateGridFit && window.__trimW && window.__trimH){
-			const fit = window.calculateGridFit(window.__trimW, window.__trimH);
+		if(allowAutoFit && window.calculateGridFit && window.__slotW && window.__slotH){
+			const fit = window.calculateGridFit(window.__slotW, window.__slotH);
 			const rInput = document.getElementById('rowsInput');
 			const cInput = document.getElementById('colsInput');
 			if(rInput) rInput.value = fit.rows;
@@ -3086,23 +4414,33 @@
 	}
 
 	if(paperSelect){
-		paperSelect.addEventListener('change', setInputsFromSelection);
+		paperSelect.addEventListener('change', () => {
+			if(document.activeElement === paperSelect) matchPageSizeBtn?.classList.remove('active');
+			setInputsFromSelection();
+		});
 	}
-	if(sheetWidthInput) sheetWidthInput.addEventListener('change', window.updateSheetSize);
-	if(sheetHeightInput) sheetHeightInput.addEventListener('change', window.updateSheetSize);
+	if(sheetWidthInput) sheetWidthInput.addEventListener('change', () => {
+		if(document.activeElement === sheetWidthInput) matchPageSizeBtn?.classList.remove('active');
+		window.updateSheetSize();
+	});
+	if(sheetHeightInput) sheetHeightInput.addEventListener('change', () => {
+		if(document.activeElement === sheetHeightInput) matchPageSizeBtn?.classList.remove('active');
+		window.updateSheetSize();
+	});
 
 	if(savePaperBtn){
 		savePaperBtn.addEventListener('click', () => {
 			const w = parseFloat(sheetWidthInput.value);
 			const h = parseFloat(sheetHeightInput.value);
 			if(!w || !h) return;
-			const name = prompt('Format Name:');
-			if(!name) return;
-			const custom = JSON.parse(localStorage.getItem('pdf_paper_formats') || '{}');
-			custom[name] = [w, h];
-			localStorage.setItem('pdf_paper_formats', JSON.stringify(custom));
-			loadCustomPapers();
-			Array.from(paperSelect.options).forEach(opt => { if(opt.textContent === name) paperSelect.value = opt.value; });
+			window.showPrompt('Format Name:', '', (name) => {
+				if(!name) return;
+				const custom = JSON.parse(localStorage.getItem('pdf_paper_formats') || '{}');
+				custom[name] = [w, h];
+				localStorage.setItem('pdf_paper_formats', JSON.stringify(custom));
+				loadCustomPapers();
+				Array.from(paperSelect.options).forEach(opt => { if(opt.textContent === name) paperSelect.value = opt.value; });
+			});
 		});
 	}
 
@@ -3116,6 +4454,7 @@
 				localStorage.setItem('pdf_paper_formats', JSON.stringify(custom));
 				loadCustomPapers();
 				paperSelect.selectedIndex = 0;
+				matchPageSizeBtn?.classList.remove('active');
 				setInputsFromSelection();
 			}
 		});
@@ -3129,16 +4468,55 @@
 		if(isLandscape && w < h) {
 			sheetWidthInput.value = h;
 			sheetHeightInput.value = w;
+			matchPageSizeBtn?.classList.remove('active');
 			window.updateSheetSize();
 		} else if(!isLandscape && w > h) {
 			sheetWidthInput.value = h;
 			sheetHeightInput.value = w;
+			matchPageSizeBtn?.classList.remove('active');
 			window.updateSheetSize();
 		}
 	};
 
 	if(orientPortraitBtn) orientPortraitBtn.addEventListener('click', () => setOrientation(false));
 	if(orientLandscapeBtn) orientLandscapeBtn.addEventListener('click', () => setOrientation(true));
+
+	// wire UI: Match Sheet Size Buttons
+	const matchPageSizeBtn = document.getElementById('matchPageSizeBtn');
+	const matchSlotSizeBtn = document.getElementById('matchSlotSizeBtn');
+
+	if(matchPageSizeBtn){
+		matchPageSizeBtn.addEventListener('click', () => {
+			const isActive = matchPageSizeBtn.classList.toggle('active');
+			const autoGridCheck = document.getElementById('autoGridCheck');
+			if(isActive) {
+				if(autoGridCheck) autoGridCheck.checked = false;
+				const pxPerMm = 96 / 25.4;
+				const r = parseInt(rowsInput.value) || 1;
+				const c = parseInt(colsInput.value) || 1;
+				const trimW = window.__trimW || 0;
+				const trimH = window.__trimH || 0;
+				const l = window.__expandL || 0;
+				const r_exp = window.__expandR || 0;
+				const t = window.__expandT || 0;
+				const b = window.__expandB || 0;
+				sheetWidthInput.value = (((c * trimW) + l + r_exp) / pxPerMm).toFixed(2);
+				sheetHeightInput.value = (((r * trimH) + t + b) / pxPerMm).toFixed(2);
+				window.updateSheetSize();
+			}
+		});
+	}
+
+	if(matchSlotSizeBtn){
+		matchSlotSizeBtn.addEventListener('click', () => {
+			if(window.__slotW && window.__slotH){
+				const pxPerMm = 96 / 25.4;
+				sheetWidthInput.value = (window.__slotW / pxPerMm).toFixed(2);
+				sheetHeightInput.value = (window.__slotH / pxPerMm).toFixed(2);
+				window.updateSheetSize();
+			}
+		});
+	}
 
 	// wire UI: Frame Background CMYK
 	const bgCSlider = document.getElementById('bgCSlider');
@@ -3260,18 +4638,19 @@
 		const saveProfileBtn = document.getElementById('saveProfileBtn');
 		if(saveProfileBtn){
 			saveProfileBtn.addEventListener('click', () => {
-				const name = prompt('Profile Name:');
-				if(!name) return;
-				const p = {
-					lab: { l: parseFloat(labLSlider?.value||0), a: parseFloat(labASlider?.value||0), b: parseFloat(labBSlider?.value||0) },
-					contrast: parseFloat(contrastSlider?.value||100),
-					saturation: parseFloat(saturationSlider?.value||100),
-					curves: JSON.parse(JSON.stringify(curveState))
-				};
-				customProfiles[name] = p;
-				localStorage.setItem('pdf_color_profiles', JSON.stringify(customProfiles));
-				loadCustomProfiles();
-				iccProfileSelect.value = 'custom:' + name;
+				window.showPrompt('Profile Name:', '', (name) => {
+					if(!name) return;
+					const p = {
+						lab: { l: parseFloat(labLSlider?.value||0), a: parseFloat(labASlider?.value||0), b: parseFloat(labBSlider?.value||0) },
+						contrast: parseFloat(contrastSlider?.value||100),
+						saturation: parseFloat(saturationSlider?.value||100),
+						curves: JSON.parse(JSON.stringify(curveState))
+					};
+					customProfiles[name] = p;
+					localStorage.setItem('pdf_color_profiles', JSON.stringify(customProfiles));
+					loadCustomProfiles();
+					iccProfileSelect.value = 'custom:' + name;
+				});
 			});
 		}
 
@@ -3520,61 +4899,58 @@
 		
 		const fileBtn = document.createElement('button');
 		fileBtn.id = 'fileMenuBtn';
-		fileBtn.className = 'toolbar-btn';
-		fileBtn.innerHTML = '<span class="material-icons">folder</span> File <span class="material-icons" style="font-size:14px">arrow_drop_down</span>';
-		fileBtn.style.display = 'flex';
-		fileBtn.style.alignItems = 'center';
-		fileBtn.style.gap = '4px';
+		fileBtn.className = 'menu-trigger';
+		fileBtn.textContent = 'File';
 		
 		const fileDropdown = document.createElement('div');
 		fileDropdown.id = 'fileMenuDropdown';
 		fileDropdown.className = 'dropdown-content';
-		fileDropdown.style.display = 'none';
-		fileDropdown.style.position = 'absolute';
-		fileDropdown.style.top = '100%';
-		fileDropdown.style.left = '0';
-		fileDropdown.style.backgroundColor = '#333';
-		fileDropdown.style.border = '1px solid #555';
-		fileDropdown.style.borderRadius = '4px';
-		fileDropdown.style.padding = '5px 0';
-		fileDropdown.style.zIndex = '2000';
-		fileDropdown.style.minWidth = '180px';
-		fileDropdown.style.flexDirection = 'column';
 
-		const createMenuItem = (text, icon, onClick) => {
+		const createMenuItem = (text, icon, onClick, infoText) => {
 			const btn = document.createElement('button');
 			btn.className = 'dropdown-item';
-			btn.style.display = 'flex';
-			btn.style.alignItems = 'center';
-			btn.style.gap = '8px';
-			btn.style.width = '100%';
-			btn.style.padding = '8px 12px';
-			btn.style.border = 'none';
-			btn.style.background = 'transparent';
-			btn.style.color = '#eee';
-			btn.style.textAlign = 'left';
-			btn.style.cursor = 'pointer';
-			btn.innerHTML = `<span class="material-icons" style="font-size:18px">${icon}</span> ${text}`;
-			btn.onmouseover = () => btn.style.background = '#444';
-			btn.onmouseout = () => btn.style.background = 'transparent';
+			const infoIcon = infoText ? `<span class="material-icons menu-info-icon" data-info="${encodeURIComponent(infoText)}" style="font-size:14px; margin-left:auto; opacity:0.6">info</span>` : '';
+			btn.innerHTML = `<span class="material-icons" style="font-size:18px">${icon}</span> ${text}${infoIcon}`;
 			btn.onclick = (e) => {
+				const infoEl = e.target.closest('.menu-info-icon');
+				if(infoEl){
+					e.stopPropagation();
+					alert(decodeURIComponent(infoEl.dataset.info || ''));
+					return;
+				}
 				e.stopPropagation();
 				fileDropdown.style.display = 'none';
+				fileBtn.classList.remove('active');
 				onClick();
 			};
 			return btn;
 		};
 
-		fileDropdown.appendChild(createMenuItem('Open PDF...', 'file_open', () => document.getElementById('fileInput')?.click()));
+		fileDropdown.appendChild(createMenuItem('New Project', 'note_add', () => {
+			window.newProject();
+		}));
+		fileDropdown.appendChild(createMenuItem('Select Files...', 'file_open', () => {
+			window.__appendFilesMode = false;
+			document.getElementById('fileInput')?.click();
+		}));
+		fileDropdown.appendChild(createMenuItem('Add Files...', 'note_add', () => {
+			window.__appendFilesMode = true;
+			document.getElementById('fileInput')?.click();
+		}));
 		fileDropdown.appendChild(createMenuItem('Export PDF', 'picture_as_pdf', () => window.generateImposedPdf && window.generateImposedPdf()));
 		
 		const sep = document.createElement('div');
-		sep.style.height = '1px';
-		sep.style.background = '#555';
-		sep.style.margin = '4px 0';
+		sep.className = 'menu-separator';
 		fileDropdown.appendChild(sep);
 
 		fileDropdown.appendChild(createMenuItem('Export to Blocks...', 'view_module', showExportBlocksDialog));
+
+		const sep2 = document.createElement('div');
+		sep2.className = 'menu-separator';
+		fileDropdown.appendChild(sep2);
+
+		fileDropdown.appendChild(createMenuItem('Save Project...', 'save', () => window.saveProjectData && window.saveProjectData(), 'All files used in this project must be in the same directory for the project to work correctly.'));
+		fileDropdown.appendChild(createMenuItem('Load Project...', 'folder_open', () => document.getElementById('projectFileInput')?.click(), 'Files are first searched at their original paths, then by filename in the project directory and current directory. Keep PDFs alongside the project file or in the same folder as when imported for best results.'));
 
 		fileBtnContainer.appendChild(fileBtn);
 		fileBtnContainer.appendChild(fileDropdown);
@@ -3585,11 +4961,16 @@
 			e.stopPropagation();
 			const isVisible = fileDropdown.style.display === 'flex';
 			document.querySelectorAll('.dropdown-content').forEach(el => el.style.display = 'none');
-			fileDropdown.style.display = isVisible ? 'none' : 'flex';
+			document.querySelectorAll('.menu-trigger').forEach(el => el.classList.remove('active'));
+			if (!isVisible) {
+				fileDropdown.style.display = 'flex';
+				fileBtn.classList.add('active');
+			}
 		});
 
 		document.addEventListener('click', () => {
 			fileDropdown.style.display = 'none';
+			fileBtn.classList.remove('active');
 		});
 	}
 
@@ -4004,12 +5385,36 @@
 
 	// Wrap openPdfFile to enforce layout settings on load
 	const originalOpenPdf = window.openPdfFile;
-	window.openPdfFile = async function(arg){
-		await originalOpenPdf(arg);
-		if(layoutSelect && layoutSelect.value){
+	window.openPdfFile = async function(arg, keepStructure = false, append = false){
+		await originalOpenPdf(arg, keepStructure, append);
+		if(!window.__projectActive && !append && layoutSelect && layoutSelect.value){
 			window.applyCurrentLayout();
 		}
 		if(window.fitSheetsToWorkspace) window.fitSheetsToWorkspace();
+		if(window.refreshGsCommandPreview) window.refreshGsCommandPreview();
+	};
+
+	window.newProject = function(){
+		window.__projectActive = false;
+		window.__projectName = '';
+		window.__preservePageRange = false;
+		const statusProject = document.getElementById('statusProjectName');
+		if(statusProject) statusProject.textContent = '';
+
+		window.__importedFiles = [];
+		window.__fileNames = [];
+		window.__filePageCounts = [];
+		window.__pdfDoc = null;
+
+		if(layoutSelect){
+			layoutSelect.value = 'Default';
+			if(window.applyCurrentLayout) window.applyCurrentLayout();
+		}
+		if(window.updateSheetSize) window.updateSheetSize();
+		if(window.drawSheetCropMarks) window.drawSheetCropMarks();
+		if(window.drawSheetOverlays) window.drawSheetOverlays();
+		if(window.refreshGsCommandPreview) window.refreshGsCommandPreview();
+		if(window.renderFileList) window.renderFileList();
 	};
 
 	// Sync UI inputs to match the currently selected slot (or global defaults)
@@ -4025,18 +5430,44 @@
 		let offX = window.__offsetX || 0;
 		let offY = window.__offsetY || 0;
 		
+		let currentFitMode = null;
+		if (window.__preferUpscaleNotRotate) currentFitMode = 'fit';
+		else if (window.__fillImage) currentFitMode = 'fill';
+		else if (window.__stretchImage) currentFitMode = 'stretch';
+
 		let l = window.__expandL || 0;
 		let r_exp = window.__expandR || 0;
 		let t = window.__expandT || 0;
 		let b = window.__expandB || 0;
 		
+		let allFit = true;
+		let anyFit = false;
+
 		let trimW = window.__trimW || 0;
 		let trimH = window.__trimH || 0;
 		let fitToPage = window.__fitToPage;
-		const transformAll = document.getElementById('transformAllPagesCheckbox')?.checked;
+		const transformAllCheck = document.getElementById('transformAllPagesCheckbox');
+		const resizeAllCheck = document.getElementById('resizeAllFramesCheckbox');
 
+		// Update Resize All checkbox immediately based on selection state
+		if(resizeAllCheck) resizeAllCheck.checked = (!window.__selectionMode && (!window.__selectedSlots || window.__selectedSlots.length === 0));
+		if(transformAllCheck) transformAllCheck.checked = !window.__selectionMode;
+
+		const transformAll = transformAllCheck?.checked;
 
 		if(!transformAll && window.__selectedSlots && window.__selectedSlots.length > 0){
+			// Check if all selected items are set to fit
+			const states = window.__selectedSlots.map(i => {
+				const slotT = (window.__slotTransforms && window.__slotTransforms[i]) || {};
+				const el = document.getElementsByClassName('preview')[i];
+				const pNum = el ? parseInt(el.dataset.pageNum) : null;
+				const pageT = (pNum && window.__pageTransforms && window.__pageTransforms[pNum]) || {};
+				return (slotT.fitToPage !== undefined) ? slotT.fitToPage : ((pageT.fitToPage !== undefined) ? pageT.fitToPage : window.__fitToPage);
+			});
+			allFit = states.every(s => s === true);
+			anyFit = states.some(s => s === true);
+			fitToPage = allFit;
+
 			const i = window.__selectedSlots[0];
 			const el = document.getElementsByClassName('preview')[i];
 			const pageNum = el ? parseInt(el.dataset.pageNum) : null;
@@ -4058,6 +5489,11 @@
 			offX = getVal('offsetX', offX);
 			offY = getVal('offsetY', offY);
 
+			// If we have manual scale or position overrides, don't fall back to global fit modes
+			const hasManualOverride = (typeof slotT.scaleX === 'number') || (typeof pageT.scaleX === 'number') || (typeof slotT.offsetX === 'number') || (typeof pageT.offsetY === 'number');
+			currentFitMode = slotT.fitMode || pageT.fitMode || (hasManualOverride ? null : currentFitMode);
+
+
 			const layout = slotT.layout || pageT.layout || {};
 			l = (layout.expandL !== undefined) ? layout.expandL : l;
 			r_exp = (layout.expandR !== undefined) ? layout.expandR : r_exp;
@@ -4070,17 +5506,21 @@
 			if(layout.width !== undefined) trimW = w - (l + r_exp);
 			if(layout.height !== undefined) trimH = h - (t + b);
 
-			if (slotT.fitToPage !== undefined) fitToPage = slotT.fitToPage;
-			else if (pageT.fitToPage !== undefined) fitToPage = pageT.fitToPage;
 		}
 
 		// Calculate effective scale if fitting
 		if(fitToPage && sX === 1 && sY === 1 && window.calculatePageFit && window.__fileWidthMm && window.__fileHeightMm){
 			const imgW = window.__fileWidthMm * pxPerMm;
 			const imgH = window.__fileHeightMm * pxPerMm;
-			const fit = window.calculatePageFit(imgW, imgH, trimW, trimH, r, skX, skY, fitMode);
+			
+			let calcFitMode = null;
+			if (window.__preferUpscaleNotRotate) calcFitMode = 'fit';
+			else if (window.__fillImage) calcFitMode = 'fill';
+			else if (window.__stretchImage) calcFitMode = 'stretch';
+
+			const fit = window.calculatePageFit(imgW, imgH, trimW, trimH, r, skX, skY, calcFitMode);
 			if(fit){
-				if(fitMode === 'stretch'){
+				if(calcFitMode === 'stretch'){
 					sX = fit.scaleX;
 					sY = fit.scaleY;
 				} else {
@@ -4091,8 +5531,23 @@
 		}
 
 		// Update UI Elements
+		const setClass = (id, cls, active) => { document.getElementById(id)?.classList.toggle(cls, active); };
 		const setVal = (id, val) => { const el = document.getElementById(id); if(el && document.activeElement !== el) el.value = val; };
 		const setTxt = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+
+		setClass('fitImageBtn', 'active', currentFitMode === 'fit');
+		setClass('fitImageBtn', 'transform-active', currentFitMode === 'fit');
+		setClass('fitImageBtn', 'fit-active', currentFitMode === 'fit');
+		setClass('fillImageBtn', 'active', currentFitMode === 'fill');
+		setClass('fillImageBtn', 'transform-active', currentFitMode === 'fill');
+		setClass('fillImageBtn', 'fill-active', currentFitMode === 'fill');
+		setClass('stretchImageBtn', 'active', currentFitMode === 'stretch');
+		setClass('stretchImageBtn', 'transform-active', currentFitMode === 'stretch');
+		setClass('stretchImageBtn', 'stretch-active', currentFitMode === 'stretch');
+
+		setClass('fitImageBtnSlot', 'active', currentFitMode === 'fit');
+		setClass('fillImageBtnSlot', 'active', currentFitMode === 'fill');
+		setClass('stretchImageBtnSlot', 'active', currentFitMode === 'stretch');
 
 		setVal('rotationInput', r);
 		if(document.getElementById('rotationSlider')) document.getElementById('rotationSlider').value = (r > 180) ? (r - 360) : r;
@@ -4135,21 +5590,30 @@
 		}
 		
 		const scaleIn = document.getElementById('slotScalePercentInput');
-		if(scaleIn && window.__fileWidthMm && trimW > 0){
-			const pct = Math.round((trimW / window.__fileWidthMm) * 100);
+		if(scaleIn && window.__fileWidthMm && window.__fileHeightMm && trimW > 0 && trimH > 0){
+			const pctW = (trimW / window.__fileWidthMm);
+			const pctH = (trimH / window.__fileHeightMm);
+			const pct = Math.round(Math.min(pctW, pctH) * 100);
 			if(document.activeElement !== scaleIn) scaleIn.value = pct;
 		}
 
-		const linkCheck = document.getElementById('linkSlotScaleCheckbox');
-		if(linkCheck) linkCheck.checked = !!fitToPage;
 
-		const resizeAllCheck = document.getElementById('resizeAllFramesCheckbox');
-		if(resizeAllCheck) resizeAllCheck.checked = (!window.__selectedSlots || window.__selectedSlots.length === 0);
 
-		const transformAllCheck = document.getElementById('transformAllPagesCheckbox');
-		if(transformAllCheck && !transformAllCheck.hasAttribute('data-init')){
-			transformAllCheck.setAttribute('data-init', 'true');
-			transformAllCheck.addEventListener('change', window.syncSelectionToUI);
+		const tAllCheck = document.getElementById('transformAllPagesCheckbox');
+		if(tAllCheck && !tAllCheck.hasAttribute('data-init')){
+			tAllCheck.setAttribute('data-init', 'true');
+			tAllCheck.addEventListener('change', () => {
+				if (tAllCheck.checked && window.__selectionMode) {
+					window.__selectionMode = false;
+					window.__selectedSlots = [];
+					window.__selectedPages = [];
+					['toolSelectRowBtn', 'toolSelectColBtn', 'toolSelectSlotBtn'].forEach(id => {
+						document.getElementById(id)?.classList.remove('active');
+					});
+					document.querySelectorAll('.preview.selected-frame').forEach(el => el.classList.remove('selected-frame'));
+				}
+				window.syncSelectionToUI();
+			});
 		}
 	};
 
@@ -4223,4 +5687,55 @@
 				}
 			}
 		});
+	}
+
+	function injectPluginUI() {
+		const tb = document.getElementById('toolbarButtons');
+		if (tb && window.impositionfix._ui.buttons.length) {
+			window.impositionfix._ui.buttons.forEach(btn => {
+				const el = document.createElement('button');
+				el.className = 'toolbox-btn';
+				el.innerHTML = btn.icon || btn.label;
+				el.title = btn.title || btn.label;
+				el.onclick = btn.onClick;
+				(btn.container ? tb.querySelector(btn.container) : tb).appendChild(el);
+			});
+		}
+
+		const tabBar = document.querySelector('.rtTabBar');
+		if (tabBar && window.impositionfix._ui.tabs.length) {
+			window.impositionfix._ui.tabs.forEach(tab => {
+				const tabBtn = document.createElement('button');
+				tabBtn.className = 'toolbox-btn';
+				tabBtn.textContent = tab.label;
+				tabBtn.dataset.tab = tab.id;
+				tabBtn.onclick = () => {
+					document.querySelectorAll('.rtContentTab').forEach(p => p.style.display = 'none');
+					const panel = document.getElementById('tab-panel-' + tab.id);
+					if (!panel) {
+						const p = document.createElement('div');
+						p.id = 'tab-panel-' + tab.id;
+						p.className = 'rtContentTab';
+						p.style.display = 'flex';
+						p.style.flexDirection = 'column';
+						document.querySelector('.rtContentArea').appendChild(p);
+						if (typeof tab.contentFn === 'function') tab.contentFn(p);
+					} else {
+						panel.style.display = '';
+					}
+					document.querySelectorAll('.rtTabBar .toolbox-btn').forEach(b => {
+						b.style.borderBottom = '2px solid transparent';
+						b.style.color = '#888';
+					});
+					tabBtn.style.borderBottom = '2px solid #00bcd4';
+					tabBtn.style.color = '#fff';
+				};
+				tabBar.appendChild(tabBtn);
+			});
+		}
+	}
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', injectPluginUI);
+	} else {
+		injectPluginUI();
 	}

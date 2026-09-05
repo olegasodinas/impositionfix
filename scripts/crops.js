@@ -36,15 +36,10 @@ window.drawSheetCropMarks = function(){
 	};
 
 	const pxPerMm = 96 / 25.4;
-	// Use trim size if available (base size without expansion), else full slot size
-	const trimW = window.__trimW || window.__slotW;
-	const trimH = window.__trimH || window.__slotH;
-	const slotW = trimW;
-	const slotH = trimH;
-	if(!slotW || !slotH) return;
-
 	const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
 	const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+	const slotsPerSheet = rows * cols;
+
 	const gapX = getVal('markGapXInput', 3) * pxPerMm;
 	const gapY = getVal('markGapYInput', 3) * pxPerMm;
 	const len = getVal('markLengthInput', 4) * pxPerMm;
@@ -83,6 +78,38 @@ window.drawSheetCropMarks = function(){
 		svg.style.zIndex = '9999';
 		svg.style.overflow = 'visible';
 
+		// Calculate actual column widths and row heights for this specific sheet
+		const colWidths = new Array(cols).fill(0);
+		const rowHeights = new Array(rows).fill(0);
+		const previews = Array.from(container.querySelectorAll('.preview'));
+
+		previews.forEach((el, i) => {
+			const r = Math.floor(i / cols);
+			const c = i % cols;
+			const pageNum = parseInt(el.dataset.pageNum);
+			const slotT = (window.__slotTransforms && window.__slotTransforms[sheetIndex * slotsPerSheet + i]) || {};
+			const pageT = (pageNum && window.__pageTransforms && window.__pageTransforms[pageNum]) || {};
+			const layout = slotT.layout || pageT.layout || {};
+
+			const w = (layout.width !== undefined) ? layout.width : (window.__slotW || 0);
+			const h = (layout.height !== undefined) ? layout.height : (window.__slotH || 0);
+			const l_exp = (layout.expandL !== undefined) ? layout.expandL : (window.__expandL || 0);
+			const r_exp = (layout.expandR !== undefined) ? layout.expandR : (window.__expandR || 0);
+			const t_exp = (layout.expandT !== undefined) ? layout.expandT : (window.__expandT || 0);
+			const b_exp = (layout.expandB !== undefined) ? layout.expandB : (window.__expandB || 0);
+
+			const curTrimW = w - (l_exp + r_exp);
+			const curTrimH = h - (t_exp + b_exp);
+
+			if (c < cols) colWidths[c] = Math.max(colWidths[c], curTrimW);
+			if (r < rows) rowHeights[r] = Math.max(rowHeights[r], curTrimH);
+		});
+
+		const gridTotalW = colWidths.reduce((a, b) => a + b, 0);
+		const gridTotalH = rowHeights.reduce((a, b) => a + b, 0);
+
+		if (gridTotalW <= 0 || gridTotalH <= 0) return;
+
 		// Calculate metrics per sheet to support mirroring
 		let currentSlotX = window.__slotX || 0;
 		if (window.__gridDuplexMirror && sheetIndex % 2 !== 0) {
@@ -91,8 +118,6 @@ window.drawSheetCropMarks = function(){
 		const centerX = (container.clientWidth / 2) + currentSlotX;
 		const centerY = (container.clientHeight / 2) + (window.__slotY || 0);
 
-		const gridTotalW = cols * slotW;
-		const gridTotalH = rows * slotH;
 		const gridLeft = centerX - (gridTotalW / 2);
 		const gridTop = centerY - (gridTotalH / 2);
 
@@ -141,29 +166,31 @@ window.drawSheetCropMarks = function(){
 		svg.appendChild(createLine(startX_Right, yRB, endX_Right, yRB));
 
 		// Inner Vertical Marks (Between columns)
+		let currentX = gridLeft;
 		for(let i=1; i<cols; i++){
-			const x = gridLeft + (i * slotW);
+			currentX += colWidths[i-1];
 			// Right cut of left slot
-			const x1 = x - innerBleedX;
+			const x1 = currentX - innerBleedX;
 			svg.appendChild(createLine(x1, startY, x1, endY, innerDash));
 			svg.appendChild(createLine(x1, startY_Bottom, x1, endY_Bottom, innerDash));
 			
 			// Left cut of right slot
-			const x2 = x + innerBleedX;
+			const x2 = currentX + innerBleedX;
 			svg.appendChild(createLine(x2, startY, x2, endY, innerDash));
 			svg.appendChild(createLine(x2, startY_Bottom, x2, endY_Bottom, innerDash));
 		}
 
 		// Inner Horizontal Marks (Between rows)
+		let currentY = gridTop;
 		for(let i=1; i<rows; i++){
-			const y = gridTop + (i * slotH);
+			currentY += rowHeights[i-1];
 			// Bottom cut of top slot
-			const y1 = y - innerBleedY;
+			const y1 = currentY - innerBleedY;
 			svg.appendChild(createLine(startX_Left, y1, endX_Left, y1, innerDash));
 			svg.appendChild(createLine(startX_Right, y1, endX_Right, y1, innerDash));
 			
 			// Top cut of bottom slot
-			const y2 = y + innerBleedY;
+			const y2 = currentY + innerBleedY;
 			svg.appendChild(createLine(startX_Left, y2, endX_Left, y2, innerDash));
 			svg.appendChild(createLine(startX_Right, y2, endX_Right, y2, innerDash));
 		}

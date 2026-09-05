@@ -63,7 +63,7 @@ window.parsePageOrder = function(input, _ignored, explicitCols) {
 	let fileCounts = (window.__filePageCounts && window.__filePageCounts.length > 0) ? window.__filePageCounts : (globalPageCount ? [globalPageCount] : []);
 
 	// Data Merge Override: If repeating a single page, treat document as having as many pages as data rows
-	if (window.__mergeData && window.__mergeData.rows && window.__mergeSource && window.__mergeSource.mode === 'single') {
+	if (window.__mergeEnabled && window.__mergeData && window.__mergeData.rows && window.__mergeSource && window.__mergeSource.mode === 'single') {
 		const dataCount = window.__mergeData.rows.length;
 		if (dataCount > 0) {
 			globalPageCount = dataCount;
@@ -638,7 +638,36 @@ window.pagesToRangeString = function(pages) {
 
 // Helper to insert file pages into selected slots
 window.insertPagesIntoRange = function(currentRangeStr, selectedSlots, fileIndex) {
-	const oldPages = window.parsePageOrder(currentRangeStr);
+	const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+	const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+	const slotsPerSheet = Math.max(1, rows * cols);
+	const selectionType = window.__selectionType || 'single';
+
+	// 1. Identify Selection Pattern (Target Local Indices)
+	const targetLocalIndices = new Set();
+
+	if (selectionType === 'col') {
+		const selectedCols = new Set();
+		selectedSlots.forEach(s => selectedCols.add(s % cols));
+		// Expand cols to local indices
+		for (let r = 0; r < rows; r++) {
+			selectedCols.forEach(c => targetLocalIndices.add(r * cols + c));
+		}
+	} else if (selectionType === 'row') {
+		const selectedRows = new Set();
+		selectedSlots.forEach(s => selectedRows.add(Math.floor((s % slotsPerSheet) / cols)));
+		// Expand rows to local indices
+		selectedRows.forEach(r => {
+			for (let c = 0; c < cols; c++) {
+				targetLocalIndices.add(r * cols + c);
+			}
+		});
+	} else {
+		// Single / Arbitrary
+		selectedSlots.forEach(s => targetLocalIndices.add(s % slotsPerSheet));
+	}
+
+	// 2. Prepare File Pages
 	const fileCount = (window.__filePageCounts && window.__filePageCounts[fileIndex]) || 0;
 	if (fileCount === 0) return currentRangeStr;
 	
@@ -647,33 +676,45 @@ window.insertPagesIntoRange = function(currentRangeStr, selectedSlots, fileIndex
 		for(let i=0; i<fileIndex; i++) fileOffset += (window.__filePageCounts[i] || 0);
 	}
 	
-	const newPages = [];
-	for(let i=1; i<=fileCount; i++) newPages.push(fileOffset + i);
+	const filePages = [];
+	for(let i=1; i<=fileCount; i++) filePages.push(fileOffset + i);
 
-	const result = [];
-	const selectedSet = new Set(selectedSlots);
-	let oldIdx = 0;
-	let newIdx = 0;
-	let slotIdx = 0;
+	// 3. Parse Existing Pages
+	let pages = window.parsePageOrder(currentRangeStr);
 	
-	while(oldIdx < oldPages.length || newIdx < newPages.length) {
-		if (selectedSet.has(slotIdx)) {
-			if (newIdx < newPages.length) {
-				result.push(newPages[newIdx++]);
-			} else {
-				if (oldIdx < oldPages.length) result.push(oldPages[oldIdx++]);
-			}
-		} else {
-			if (oldIdx < oldPages.length) {
-				result.push(oldPages[oldIdx++]);
-			} else if (newIdx < newPages.length) {
-				result.push(newPages[newIdx++]);
-			}
-		}
-		slotIdx++;
+	// 4. Calculate Capacity and Needed Sheets
+	const capacityPerSheet = targetLocalIndices.size;
+	
+	let totalSheets = Math.ceil(pages.length / slotsPerSheet);
+
+	if (capacityPerSheet > 0) {
+		const neededSheets = Math.ceil(filePages.length / capacityPerSheet);
+		if (neededSheets > totalSheets) totalSheets = neededSheets;
 	}
 
-	return window.pagesToRangeString(result);
+	// 5. Fill Pages
+	// Extend pages array to cover all sheets
+	while(pages.length < totalSheets * slotsPerSheet) pages.push(0);
+
+	let filePtr = 0;
+
+	for (let s = 0; s < totalSheets; s++) {
+		const sheetBase = s * slotsPerSheet;
+		for (let i = 0; i < slotsPerSheet; i++) {
+			const globalIdx = sheetBase + i;
+			const localIdx = i;
+
+			if (targetLocalIndices.has(localIdx)) {
+				if (filePtr < filePages.length) {
+					pages[globalIdx] = filePages[filePtr++];
+				} else {
+					pages[globalIdx] = 0; // Fill with 0/Empty
+				}
+			}
+		}
+	}
+
+	return window.pagesToRangeString(pages);
 };
 
 // Alias for compatibility with pdf-render.js

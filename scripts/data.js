@@ -138,7 +138,11 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 
 	window.__overlays.forEach(overlay => {
 		if (overlay.visible === false) return;
+		if (overlay._pluginName) return; // Plugin overlays have their own render path (drawPreview)
 		if (['colorbar', 'duplex', 'sigmark'].includes(overlay.type)) return;
+
+		const totalW = offset.w || container.clientWidth || parseFloat(container.style.width) || 0;
+		const totalH = offset.h || container.clientHeight || parseFloat(container.style.height) || 0;
 
 		// Position relative to trim box (offset by expansion)
 		const x = (parseFloat(overlay.x) || 0) * pxPerMm + offX;
@@ -206,7 +210,8 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 			if (style) {
 				fontSize = parseFloat(style.fontSize) || 12;
 				const fam = style.fontFamily || 'Helvetica';
-				if (window.__customFonts && window.__customFonts[fam]) {
+				const fontData = window.__customFonts && window.__customFonts[fam];
+				if (fontData && fontData.buffer) {
 					fontFamily = `"${fam}", sans-serif`;
 				} else if (fam.startsWith('Times')) fontFamily = '"Times New Roman", serif';
 				else if (fam.startsWith('Courier')) fontFamily = '"Courier New", monospace';
@@ -215,7 +220,7 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 				const fStyle = style.fontStyle || 'Normal';
 				
 				// Check for variable font mapping
-				if (window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
+				if (fontData && window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
 					const settings = window.__fontVariationsCache[fam].map[fStyle];
 					// Map known axes to CSS
 					const cssSettings = [];
@@ -228,8 +233,8 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 					if (fStyle.includes('Italic')) fontStyle = 'italic';
 				}
 
-				const c = style.color || [0, 0, 0, 1];
-				color = `rgb(${Math.round(255*(1-c[0])*(1-c[3]))},${Math.round(255*(1-c[1])*(1-c[3]))},${Math.round(255*(1-c[2])*(1-c[3]))})`;
+				const colorCss = (window.styleColorToCss) ? window.styleColorToCss(style) : 'black';
+				color = colorCss;
 				if (style.opacity !== undefined) opacity = style.opacity;
 				
 				if (style.align === 'center') div.style.transform = 'translateX(-50%)';
@@ -246,6 +251,139 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 			div.style.opacity = opacity;
 			if(fontVariationSettings) div.style.fontVariationSettings = fontVariationSettings;
 			div.style.whiteSpace = 'nowrap';
+		} else if (overlay.type === 'frame') {
+			const trimW = totalW - (offset.x + (offset.r || 0));
+			const trimH = totalH - (offset.y + (offset.b || 0));
+			const thick = (parseFloat(overlay.thickness) || 0.2) * pxPerMm;
+			const margin = (parseFloat(overlay.offset) || 0) * pxPerMm;
+			const c = overlay.cmyk || [0, 0, 0, 1];
+			
+			div.style.left = (offset.x + margin) + 'px';
+			if (overlay.facingPages && pageNum % 2 === 0) {
+				div.style.left = 'auto';
+				div.style.right = ((offset.r || 0) + margin) + 'px';
+			}
+			div.style.top = (offset.y + margin) + 'px';
+			div.style.width = Math.max(0, trimW - 2 * margin) + 'px';
+			div.style.height = Math.max(0, trimH - 2 * margin) + 'px';
+			div.style.outline = `${thick}px solid ${toRgb(c[0], c[1], c[2], c[3])}`;
+			div.style.outlineOffset = `-${thick}px`;
+			div.style.opacity = (overlay.opacity !== undefined) ? overlay.opacity : 1;
+		} else if (overlay.type === 'bleed') {
+			const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+			const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+			const slotsPerSheet = rows * cols;
+			const localIdx = slotIndex % slotsPerSheet;
+			const rIdx = Math.floor(localIdx / cols);
+			const cIdx = localIdx % cols;
+
+			const bOutX = parseFloat(document.getElementById('cropBleedXInput')?.value || 0);
+			const bOutY = parseFloat(document.getElementById('cropBleedYInput')?.value || 0);
+			const bInX = parseFloat(document.getElementById('innerCropBleedXInput')?.value || 0);
+			const bInY = parseFloat(document.getElementById('innerCropBleedYInput')?.value || 0);
+
+			const bleedL = ((cIdx === 0) ? bOutX : bInX) * pxPerMm;
+			const bleedR = ((cIdx === cols - 1) ? bOutX : bInX) * pxPerMm;
+			const bleedT = ((rIdx === 0) ? bOutY : bInY) * pxPerMm;
+			const bleedB = ((rIdx === rows - 1) ? bOutY : bInY) * pxPerMm;
+
+			const trimW = totalW - (offset.x + (offset.r || 0));
+			const trimH = totalH - (offset.y + (offset.b || 0));
+			const c = overlay.cmyk || [0, 1, 1, 0];
+			
+			div.style.left = offset.x + 'px';
+			if (overlay.facingPages && pageNum % 2 === 0) {
+				div.style.left = 'auto';
+				div.style.right = (offset.r || 0) + 'px';
+			}
+			div.style.top = offset.y + 'px';
+			div.style.width = trimW + 'px';
+			div.style.height = trimH + 'px';
+			div.style.borderStyle = 'solid';
+			div.style.borderWidth = `${bleedT}px ${bleedR}px ${bleedB}px ${bleedL}px`;
+			div.style.borderColor = toRgb(c[0], c[1], c[2], c[3]);
+			div.style.boxSizing = 'border-box';
+			div.style.opacity = (overlay.opacity !== undefined) ? overlay.opacity : 0.5;
+		} else if (overlay.type === 'size') {
+			const trimW = totalW - (offset.x + (offset.r || 0));
+			const trimH = totalH - (offset.y + (offset.b || 0));
+			const c = overlay.cmyk || [0, 0, 0, 1];
+			
+			div.style.left = offset.x + 'px';
+			if (overlay.facingPages && pageNum % 2 === 0) {
+				div.style.left = 'auto';
+				div.style.right = (offset.r || 0) + 'px';
+			}
+			div.style.top = offset.y + 'px';
+			div.style.width = trimW + 'px';
+			div.style.height = trimH + 'px';
+			div.style.outline = `4px solid ${toRgb(c[0], c[1], c[2], c[3])}`;
+			div.style.outlineOffset = '-2px';
+			div.style.boxSizing = 'border-box';
+			div.style.opacity = (overlay.opacity !== undefined) ? overlay.opacity : 1;
+			div.style.display = 'flex';
+			div.style.alignItems = 'center';
+			div.style.justifyContent = 'center';
+
+			const wMm = (trimW / pxPerMm).toFixed(2);
+			const hMm = (trimH / pxPerMm).toFixed(2);
+
+			const label = document.createElement('span');
+			label.textContent = `${parseFloat(wMm)} × ${parseFloat(hMm)}`;
+			label.style.background = 'rgba(255,255,255,0.8)';
+			label.style.padding = '1px 3px';
+			label.style.fontSize = '30px';
+			label.style.color = 'black';
+			label.style.borderRadius = '2px';
+			div.appendChild(label);
+		} else if (overlay.type === 'safety') {
+			const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+			const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+			const slotsPerSheet = rows * cols;
+			const localIdx = slotIndex % slotsPerSheet;
+			const rIdx = Math.floor(localIdx / cols);
+			const cIdx = localIdx % cols;
+
+			const bOutX = parseFloat(document.getElementById('cropBleedXInput')?.value || 0);
+			const bOutY = parseFloat(document.getElementById('cropBleedYInput')?.value || 0);
+			const bInX = parseFloat(document.getElementById('innerCropBleedXInput')?.value || 0);
+			const bInY = parseFloat(document.getElementById('innerCropBleedYInput')?.value || 0);
+
+			const bleedL = ((cIdx === 0) ? bOutX : bInX) * pxPerMm;
+			const bleedR = ((cIdx === cols - 1) ? bOutX : bInX) * pxPerMm;
+			const bleedT = ((rIdx === 0) ? bOutY : bInY) * pxPerMm;
+			const bleedB = ((rIdx === rows - 1) ? bOutY : bInY) * pxPerMm;
+
+			const trimW = totalW - (offset.x + (offset.r || 0));
+			const trimH = totalH - (offset.y + (offset.b || 0));
+			const c = overlay.cmyk || [0, 1, 1, 0];
+			
+			div.style.left = (offset.x + bleedL) + 'px';
+			if (overlay.facingPages && pageNum % 2 === 0) {
+				div.style.left = 'auto';
+				div.style.right = ((offset.r || 0) + bleedR) + 'px';
+			}
+			div.style.top = (offset.y + bleedT) + 'px';
+			div.style.width = Math.max(0, trimW - bleedL - bleedR) + 'px';
+			div.style.height = Math.max(0, trimH - bleedT - bleedB) + 'px';
+			div.style.outline = `2.5px dashed ${toRgb(c[0], c[1], c[2], c[3])}`;
+			div.style.outlineOffset = '-2.5px';
+			div.style.boxSizing = 'border-box';
+			div.style.opacity = (overlay.opacity !== undefined) ? overlay.opacity : 0.8;
+			div.style.display = 'flex';
+			div.style.alignItems = 'center';
+			div.style.justifyContent = 'center';
+
+			const wMm = ((trimW - bleedL - bleedR) / pxPerMm).toFixed(2);
+			const hMm = ((trimH - bleedT - bleedB) / pxPerMm).toFixed(2);
+			const label = document.createElement('span');
+			label.textContent = `${parseFloat(wMm)} × ${parseFloat(hMm)}`;
+			label.style.fontSize = '30px';
+			label.style.background = 'rgba(255,255,255,0.7)';
+			label.style.padding = '1px 3px';
+			label.style.borderRadius = '2px';
+			label.style.color = toRgb(c[0], c[1], c[2], c[3]);
+			div.appendChild(label);
 		} else {
 			// Default square
 			const w = (parseFloat(overlay.width) || 0) * pxPerMm;
@@ -268,7 +406,7 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 	});
 
 	// Data Merge Overlays
-	if(window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
+	if(window.__mergeEnabled && window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
 		window.__mergeData.headers.forEach((header, colIndex) => {
 			const cfg = window.__mergeConfig[header];
 			if(!cfg || !cfg.visible) return;
@@ -309,7 +447,8 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 					div.style.fontSize = pxSize + 'px';
 					
 					const fam = style.fontFamily || 'Helvetica';
-					if (window.__customFonts && window.__customFonts[fam]) {
+					const fontData = window.__customFonts && window.__customFonts[fam];
+					if (fontData && fontData.buffer) {
 						div.style.fontFamily = `"${fam}", sans-serif`;
 					} else if (fam.startsWith('Times')) div.style.fontFamily = '"Times New Roman", serif';
 					else if (fam.startsWith('Courier')) div.style.fontFamily = '"Courier New", monospace';
@@ -317,7 +456,7 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 
 					const fStyle = style.fontStyle || 'Normal';
 					
-					if (window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
+					if (fontData && window.__fontVariationsCache && window.__fontVariationsCache[fam] && window.__fontVariationsCache[fam].map[fStyle]) {
 						const settings = window.__fontVariationsCache[fam].map[fStyle];
 						const cssSettings = [];
 						for (const [axis, value] of Object.entries(settings)) {
@@ -329,8 +468,7 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 						if (fStyle.includes('Italic')) div.style.fontStyle = 'italic';
 					}
 					
-					const c = style.color || [0, 0, 0, 1];
-					div.style.color = toRgb(c[0], c[1], c[2], c[3]);
+					div.style.color = (window.styleColorToCss) ? window.styleColorToCss(style) : 'black';
 					if (style.opacity !== undefined) div.style.opacity = style.opacity;
 					div.style.whiteSpace = 'nowrap';
 
@@ -339,6 +477,13 @@ window.addPreviewOverlays = function(container, pageNum, offset, slotIndex, page
 			}
 		});
 	}
+	window.impositionfix._overlays.forEach(o => {
+		if (o.visible === false) return;
+		if (typeof o.drawPreview === 'function') {
+			try { o.drawPreview.call(o, container, pageNum, slotIndex, { window }); } catch(e) { console.error('Overlay drawPreview error:', o.id || o.name, e); }
+		}
+	});
+
 };
 
 window.updatePreviewOverlays = function(container, pageNum, offset) {
@@ -362,6 +507,7 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 
 		for (const overlay of window.__overlays) {
 			if (overlay.visible === false) continue;
+			if (overlay._pluginName) continue; // Plugin overlays have their own drawPdf path below
 			if (['colorbar', 'duplex', 'sigmark'].includes(overlay.type)) continue;
 			const xMm = parseFloat(overlay.x) || 0;
 			const yMm = parseFloat(overlay.y) || 0;
@@ -432,7 +578,8 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 					align = style.align || 'left';
 				}
 				
-				const isCustom = window.__customFonts && window.__customFonts[fontName];
+				const fontData = window.__customFonts && window.__customFonts[fontName];
+				const isCustom = fontData && fontData.buffer;
 				
 				// Embed font
 				let font = fontCache.get(fontName);
@@ -448,7 +595,7 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 							if (!window.fontkit) {
 								throw new Error("fontkit library is missing. Please include it to use custom fonts.");
 							}
-							font = await newPage.doc.embedFont(window.__customFonts[fontName].slice(0), { subset: true });
+							font = await newPage.doc.embedFont(fontData.buffer.slice(0), { subset: true });
 						} else {
 							if (!stdFonts.includes(fontName)) {
 								throw new Error(`Custom font "${fontName}" is not loaded. Please reload it.`);
@@ -497,10 +644,162 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 					y: drawY,
 					size: fontSize,
 					font: font,
-					color: cmyk(color[0], color[1], color[2], color[3]),
+					color: (window.styleTextColor) ? window.styleTextColor(style, pdfLib) : cmyk(color[0], color[1], color[2], color[3]),
 					opacity: opacity
 				});
 
+			} else if (overlay.type === 'frame') {
+				const trimW = boxW - (offset.x + (offset.r || 0));
+				const trimH = boxH - (offset.y + (offset.b || 0));
+				const thick = (parseFloat(overlay.thickness) || 0.2) * ptPerMm;
+				const margin = (parseFloat(overlay.offset) || 0) * ptPerMm;
+				const c = overlay.cmyk || [0, 0, 0, 1];
+				const op = (overlay.opacity !== undefined) ? overlay.opacity : 1;
+
+				let drawX = boxX + offset.x + margin;
+				if (overlay.facingPages && pageNum % 2 === 0) {
+					drawX = boxX + (offset.r || 0) + margin;
+				}
+				const drawY = boxY + (offset.b || 0) + margin;
+				const w = Math.max(0, trimW - 2 * margin);
+				const h = Math.max(0, trimH - 2 * margin);
+
+				newPage.drawRectangle({
+					x: drawX,
+					y: drawY,
+					width: w,
+					height: h,
+					borderColor: cmyk(c[0], c[1], c[2], c[3]),
+					borderWidth: thick,
+					opacity: op,
+				});
+			} else if (overlay.type === 'bleed') {
+				const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+				const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+				const slotsPerSheet = rows * cols;
+				const localIdx = slotIndex % slotsPerSheet;
+				const rIdx = Math.floor(localIdx / cols);
+				const cIdx = localIdx % cols;
+
+				const bOutX = parseFloat(document.getElementById('cropBleedXInput')?.value || 0);
+				const bOutY = parseFloat(document.getElementById('cropBleedYInput')?.value || 0);
+				const bInX = parseFloat(document.getElementById('innerCropBleedXInput')?.value || 0);
+				const bInY = parseFloat(document.getElementById('innerCropBleedYInput')?.value || 0);
+
+				const bleedL = ((cIdx === 0) ? bOutX : bInX) * ptPerMm;
+				const bleedR = ((cIdx === cols - 1) ? bOutX : bInX) * ptPerMm;
+				const bleedT = ((rIdx === 0) ? bOutY : bInY) * ptPerMm;
+				const bleedB = ((rIdx === rows - 1) ? bOutY : bInY) * ptPerMm;
+
+				const trimW = boxW - (offset.x + (offset.r || 0));
+				const trimH = boxH - (offset.y + (offset.b || 0));
+				const c = overlay.cmyk || [0, 1, 1, 0];
+				const op = (overlay.opacity !== undefined) ? overlay.opacity : 0.5;
+
+				let drawX = boxX + offset.x;
+				if (overlay.facingPages && pageNum % 2 === 0) {
+					drawX = boxX + (offset.r || 0);
+				}
+				const drawY = boxY + (offset.b || 0);
+
+				const color = cmyk(c[0], c[1], c[2], c[3]);
+				const w = trimW;
+				const h = trimH;
+				
+				// Draw 4 rectangles to handle potential non-uniform bleed accurately
+				newPage.drawRectangle({ x: drawX, y: drawY + h - bleedT, width: w, height: bleedT, color, opacity: op }); // Top
+				newPage.drawRectangle({ x: drawX, y: drawY, width: w, height: bleedB, color, opacity: op }); // Bottom
+				newPage.drawRectangle({ x: drawX, y: drawY + bleedB, width: bleedL, height: Math.max(0, h - bleedT - bleedB), color, opacity: op }); // Left
+				newPage.drawRectangle({ x: drawX + w - bleedR, y: drawY + bleedB, width: bleedR, height: Math.max(0, h - bleedT - bleedB), color, opacity: op }); // Right
+			} else if (overlay.type === 'size') {
+				const trimW = boxW - (offset.x + (offset.r || 0));
+				const trimH = boxH - (offset.y + (offset.b || 0));
+				const c = overlay.cmyk || [0, 0, 0, 1];
+				const op = (overlay.opacity !== undefined) ? overlay.opacity : 1;
+
+				let drawX = boxX + offset.x;
+				if (overlay.facingPages && pageNum % 2 === 0) {
+					drawX = boxX + (offset.r || 0);
+				}
+				const drawY = boxY + (offset.b || 0);
+
+				newPage.drawRectangle({
+					x: drawX,
+					y: drawY,
+					width: trimW,
+					height: trimH,
+					borderColor: cmyk(c[0], c[1], c[2], c[3]),
+					borderWidth: 1,
+					opacity: op,
+				});
+
+				const wMm = (trimW / ptPerMm).toFixed(1);
+				const hMm = (trimH / ptPerMm).toFixed(1);
+				const labelText = `${wMm} × ${hMm}`;
+				const fontSize = 11;
+				let font = fontCache.get('Helvetica');
+				if (!font) {
+					font = await newPage.doc.embedFont(pdfLib.StandardFonts.Helvetica);
+					fontCache.set('Helvetica', font);
+				}
+				const textWidth = font.widthOfTextAtSize(labelText, fontSize);
+				
+				newPage.drawText(labelText, {
+					x: drawX + (trimW - textWidth) / 2,
+					y: drawY + (trimH - fontSize) / 2,
+					size: fontSize,
+					font: font,
+					color: cmyk(c[0], c[1], c[2], c[3]),
+					opacity: op
+				});
+			} else if (overlay.type === 'safety') {
+				const rows = parseInt(document.getElementById('rowsInput')?.value || 1);
+				const cols = parseInt(document.getElementById('colsInput')?.value || 1);
+				const slotsPerSheet = rows * cols;
+				const localIdx = slotIndex % slotsPerSheet;
+				const rIdx = Math.floor(localIdx / cols);
+				const cIdx = localIdx % cols;
+
+				const bOutX = parseFloat(document.getElementById('cropBleedXInput')?.value || 0);
+				const bOutY = parseFloat(document.getElementById('cropBleedYInput')?.value || 0);
+				const bInX = parseFloat(document.getElementById('innerCropBleedXInput')?.value || 0);
+				const bInY = parseFloat(document.getElementById('innerCropBleedYInput')?.value || 0);
+
+				const bleedL = ((cIdx === 0) ? bOutX : bInX) * ptPerMm;
+				const bleedR = ((cIdx === cols - 1) ? bOutX : bInX) * ptPerMm;
+				const bleedT = ((rIdx === 0) ? bOutY : bInY) * ptPerMm;
+				const bleedB = ((rIdx === rows - 1) ? bOutY : bInY) * ptPerMm;
+
+				const trimW = boxW - (offset.x + (offset.r || 0));
+				const trimH = boxH - (offset.y + (offset.b || 0));
+				const c = overlay.cmyk || [0, 1, 1, 0];
+				const op = (overlay.opacity !== undefined) ? overlay.opacity : 0.8;
+
+				let drawX = boxX + offset.x + bleedL;
+				if (overlay.facingPages && pageNum % 2 === 0) {
+					drawX = boxX + (offset.r || 0) + bleedR;
+				}
+				const drawY = boxY + (offset.b || 0) + bleedB;
+				const w = Math.max(0, trimW - bleedL - bleedR);
+				const h = Math.max(0, trimH - bleedT - bleedB);
+
+				const color = cmyk(c[0], c[1], c[2], c[3]);
+				newPage.drawRectangle({ x: drawX, y: drawY, width: w, height: h, borderColor: color, borderWidth: 1.5, dashArray: [2, 2], opacity: op });
+
+				const wMm = (w / ptPerMm).toFixed(1);
+				const hMm = (h / ptPerMm).toFixed(1);
+				const labelText = `${wMm} × ${hMm}`;
+				const fontSize = 12;
+				let font = fontCache.get('Helvetica');
+				if (!font) {
+					font = await newPage.doc.embedFont(pdfLib.StandardFonts.Helvetica);
+					fontCache.set('Helvetica', font);
+				}
+				const textWidth = font.widthOfTextAtSize(labelText, fontSize);
+				
+				newPage.drawText(labelText, {
+					x: drawX + (w - textWidth) / 2, y: drawY + (h - fontSize) / 2, size: fontSize, font, color, opacity: op
+				});
 			} else {
 				// Default square
 				const wMm = parseFloat(overlay.width) || 0;
@@ -533,7 +832,7 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
         }
 
 		// Data Merge Overlays
-		if(window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
+		if(window.__mergeEnabled && window.__mergeData && window.__mergeData.headers && window.__mergeConfig){
 			for(let colIndex = 0; colIndex < window.__mergeData.headers.length; colIndex++){
 				const header = window.__mergeData.headers[colIndex];
 				const cfg = window.__mergeConfig[header];
@@ -560,7 +859,8 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 						const fontSize = parseFloat(style.fontSize) || 12;
 						
 						let fontName = style.fontFamily || 'Helvetica';
-						const isCustom = window.__customFonts && window.__customFonts[fontName];
+						const fontData = window.__customFonts && window.__customFonts[fontName];
+						const isCustom = fontData && fontData.buffer;
 						const fStyle = style.fontStyle || 'Normal';
 						
 						if (!isCustom && fontName !== 'Symbol' && fontName !== 'ZapfDingbats') {
@@ -592,7 +892,7 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 									if (!window.fontkit) {
 										throw new Error("fontkit library is missing. Please include it to use custom fonts.");
 									}
-									font = await newPage.doc.embedFont(window.__customFonts[fontName].slice(0), { subset: true });
+									font = await newPage.doc.embedFont(fontData.buffer.slice(0), { subset: true });
 								} else {
 									if (!stdFonts.includes(fontName)) {
 										throw new Error(`Custom font "${fontName}" is not loaded. Please reload it.`);
@@ -628,15 +928,60 @@ window.drawPdfOverlays = async function(newPage, boxX, boxY, boxW, boxH, pdfLib,
 						const c = style.color || [0, 0, 0, 1];
 						const opacity = style.opacity !== undefined ? style.opacity : 1;
 
-						newPage.drawText(text, { x: drawX, y: drawY, size: fontSize, font: font, color: cmyk(c[0], c[1], c[2], c[3]), opacity: opacity });
+						newPage.drawText(text, { x: drawX, y: drawY, size: fontSize, font: font, color: (window.styleTextColor) ? window.styleTextColor(style, pdfLib) : cmyk(c[0], c[1], c[2], c[3]), opacity: opacity });
 					}
 				}
 			}
 		}
-
+	window.drawPdfPageOverlays = async function(newPage, pdfLib) {
+    if (!window.__pluginPdfDrawCache) {
+        window.__pluginPdfDrawCache = new Map();
+    }
+    const cache = window.__pluginPdfDrawCache;
+    window.impositionfix._overlays.forEach(o => {
+        if (o.visible === false) return;
+        if (typeof o.drawPdf !== 'function') return;
+        if (!cache.has(o)) {
+            const origDrawPdf = o.drawPdf;
+            const norm = (v) => (v > 1 ? v / 255 : v);
+            const wrapColor = (fn) => {
+                return (...args) => fn(...args.map(a => (typeof a === 'number' ? norm(a) : a)));
+            };
+            const wrapped = async function(newPage, boxX, boxY, boxW, boxH, pdfLib, pageNum, offset, slotIndex, pagesToRender) {
+                const proxyPage = new Proxy(newPage, {
+                    get(target, prop) {
+                        const val = target[prop];
+                        if (typeof val === 'function') {
+                            return function(...args) {
+                                const opts = args[0];
+                                if (opts && typeof opts === 'object' && 'y' in opts && boxH > 0) {
+                                    opts.y = boxY + boxH - opts.y;
+                                }
+                                return val.call(target, ...args);
+                            };
+                        }
+                        return val;
+                    }
+                });
+                const proxyPdfLib = new Proxy(pdfLib, {
+                    get(target, prop) {
+                        const val = target[prop];
+                        if (prop === 'rgb' || prop === 'cmyk') {
+                            return wrapColor(val.bind(target));
+                        }
+                        return val;
+                    }
+                });
+                await origDrawPdf.call(o, proxyPage, boxX, boxY, boxW, boxH, proxyPdfLib, pageNum, offset, slotIndex, pagesToRender);
+            };
+            cache.set(o, wrapped);
+        }
+        try { cache.get(o).call(o, newPage, 0, 0, 0, 0, pdfLib, 1, {x: 0, y: 0, r: 0, b: 0}, -1, null); } catch(e) { console.error('Overlay drawPdf error:', o.id || o.name, e); }
+    });
+};
     } catch(e){
 		console.error('Error drawing overlays: ' + e.message);
-    }
+	}
 };
 
 // Draw sheet-level overlays (like Color Bars)
@@ -1026,3 +1371,133 @@ window.drawPdfSheetOverlays = async function(newPage, pxToPt, pdfLib, sheetIndex
 
 	});
 };
+
+// --- Creep Compensation (Booklet / N-Up, Data tab) ---
+// Detects folded-signature imposition and segments sides (.page elements)
+// into signatures. Section ranges are global side indices.
+window.getCreepInfo = function() {
+    const rows = parseInt(document.getElementById('rowsInput')?.value || 1) || 1;
+    const cols = parseInt(document.getElementById('colsInput')?.value || 1) || 1;
+    const slotsPerSide = Math.max(1, rows * cols);
+    const prVal = document.getElementById('pageRangeInput')?.value || '';
+    const totalSides = document.querySelectorAll('.page').length;
+
+    const isNUp = /(\d+)-?up/i.test(prVal);
+    const isBooklet = prVal.includes('booklet');
+    if(!isNUp && !isBooklet){
+        return { active: false, reason: 'No booklet or N-up imposition in Page Range' };
+    }
+    if(totalSides <= 0){
+        return { active: false, reason: 'No sheets in layout yet' };
+    }
+    if(cols < 2 || cols % 2 !== 0){
+        return { active: false, reason: 'Grid needs an even number of columns (spine at horizontal centerline)' };
+    }
+
+    // Build signature sections:
+    // - "N-up(...)" with content: actual slot count of the content
+    // - bare "N-up": signature of N pages repeating to fill all sides
+    // - remaining/booklet sides: one nested booklet signature
+    let sections = [];
+    let covered = 0;
+
+    const bareRegex = /(?:^|[\s(])(\d+)-?up(?=\s|\)|$)/gi;
+    let bm;
+    while((bm = bareRegex.exec(prVal)) !== null){
+        const n = parseInt(bm[1], 10);
+        if(n >= 4 && n % 4 === 0){
+            const sidesPerSig = Math.max(1, Math.ceil(n / slotsPerSide));
+            for(let s = covered; s < totalSides; s += sidesPerSig){
+                sections.push({ start: s, end: Math.min(s + sidesPerSig, totalSides) });
+                covered = Math.min(s + sidesPerSig, totalSides);
+                if(covered >= totalSides) break;
+            }
+            break; // one bare N-up token fills the whole document
+        }
+    }
+
+    if(sections.length === 0){
+        const nUpRegex = /(\d+)-?up\s*\(([^)]+)\)/gi;
+        let m;
+        while((m = nUpRegex.exec(prVal)) !== null && covered < totalSides){
+            const n = parseInt(m[1], 10);
+            if(!(n >= 4)) continue;
+            let slotCount = n;
+            try {
+                const contentSlots = window.parsePageOrder ? window.parsePageOrder(m[2]).length : 0;
+                if(contentSlots > 0) slotCount = Math.min(n, contentSlots);
+            } catch(e){}
+            // Parser rounds partial chunks up to a multiple of 4 pages
+            slotCount = Math.ceil(slotCount / 4) * 4;
+            const sidesCount = Math.max(1, Math.ceil(slotCount / slotsPerSide));
+            for(let s = covered; s < totalSides; s += sidesCount){
+                sections.push({ start: s, end: Math.min(s + sidesCount, totalSides) });
+                covered = Math.min(s + sidesCount, totalSides);
+                if(covered >= totalSides) break;
+            }
+            break; // one N-up expression fills the whole document range
+        }
+        if(covered < totalSides){
+            sections.push({ start: Math.min(covered, totalSides), end: totalSides });
+        }
+    } else if(covered < totalSides){
+        sections.push({ start: covered, end: totalSides });
+    }
+
+    return {
+        active: true,
+        rows: rows, cols: cols, slotsPerSide: slotsPerSide, totalSides: totalSides,
+        sidesPerSheet: 2, // booklet & N-up are duplex: front/back per physical sheet
+        sections: sections
+    };
+};
+
+// Horizontal creep offset (mm) applied to a global preview slot index.
+// Sign convention: away from the spine/gutter (spine = sheet centerline):
+//   left-of-spine slots shift left (-x), right-of-spine slots shift right (+x).
+// Innermost sheets get the biggest shift; outermost stays put unless centered
+// distribution is on (then shifts are symmetric around the centerline).
+window.getCreepOffsetMm = function(globalSlotIndex) {
+    if(!window.__creepEnabled) return 0;
+    const C = parseFloat(window.__creepTotal);
+    if(!C || !isFinite(C)) return 0; // allow positive (away from spine) and negative (opposite side)
+    if(typeof window.getCreepInfo !== 'function') return 0;
+    const info = window.getCreepInfo();
+    if(!info.active) return 0;
+
+    const sheetIdx = Math.floor(globalSlotIndex / info.slotsPerSide);
+    if(isNaN(sheetIdx) || sheetIdx < 0) return 0;
+    const colInSide = Math.floor(globalSlotIndex % info.slotsPerSide) % info.cols;
+    const mid = info.cols / 2;
+    if(info.cols > 2 && colInSide === mid) return 0; // odd middle column safety
+    const sign = (colInSide < mid) ? -1 : 1;
+
+    const seg = info.sections.find(function(s){ return sheetIdx >= s.start && sheetIdx < s.end; });
+    if(!seg) return 0;
+
+    const segSides = seg.end - seg.start;
+    const physSheets = Math.ceil(segSides / info.sidesPerSheet);
+    if(physSheets < 2) return 0; // single-sheet signature has no pushout
+
+    const localSide = sheetIdx - seg.start;
+    const physIdx = Math.floor(localSide / info.sidesPerSheet); // 0-based from the first (outermost) sheet
+
+    // Application modes:
+    //   'total':     the entered value is distributed evenly over the N-1 steps
+    //                between the anchored sheet and the far end.
+    //   'per-sheet': the entered value itself is one fixed step added on top of
+    //                each sheet as it moves away from the anchored sheet.
+    //
+    // Direction (which sheet of the signature is anchored / never moves):
+    //   '1-n': the FIRST (outermost imposed) sheet of the signature stays in
+    //          position; every following sheet shifts progressively further
+    //          inward (this is the original monotonic growth).
+    //   'n-1' (default): the INSIDE (last imposed / innermost) sheet stays in
+    //          position, and the shift grows OUTWARD toward the first sheet.
+    const anchorFirst = (window.__creepDirection === '1-n');
+    const k = anchorFirst ? physIdx : (physSheets - 1 - physIdx); // 0 at the anchored sheet
+
+    const stepSize = (window.__creepMode === 'per-sheet') ? C : (C / Math.max(1, physSheets - 1));
+    return sign * (stepSize * k);
+};
+

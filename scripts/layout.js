@@ -85,7 +85,7 @@
 			if(wrap && wrap.tagName === 'DIV' && !wrap.classList.contains('preview-page-layer')){
 				wrap.style.width = (w ? (w + 'px') : 'auto');
 				wrap.style.height = (h ? (h + 'px') : 'auto');
-				if(window.updatePreviewOverlays) window.updatePreviewOverlays(wrap, pageNum, {x: l, y: top});
+				if(window.updatePreviewOverlays) window.updatePreviewOverlays(wrap, pageNum, {x: l, y: top, r: r, b: bot, w: w, h: h});
 			}
 		}
 		if(window.updatePageTransformsOnly) window.updatePageTransformsOnly();
@@ -155,6 +155,15 @@
 
 			for(let i=0; i<slotsPerSheet; i++){
 				const globalIndex = (sheetIndex * slotsPerSheet) + i;
+				// Ensure new slots have default transform settings (Fit to Page) or inherit from previous
+				if (window.__slotTransforms && !window.__slotTransforms[globalIndex]) {
+					if (globalIndex > 0 && window.__slotTransforms[globalIndex - 1]) {
+						window.__slotTransforms[globalIndex] = JSON.parse(JSON.stringify(window.__slotTransforms[globalIndex - 1]));
+					} else {
+						window.__slotTransforms[globalIndex] = { fitToPage: (window.__fitToPage !== undefined) ? window.__fitToPage : true };
+					}
+				}
+
 				const div = document.createElement('div');
 				div.className = 'preview';
 				div.setAttribute('aria-live', 'polite');
@@ -349,12 +358,16 @@
 			}
 		});
 		
-		// Re-apply any existing overrides
-		window.applyLayoutToPreviews();
+	// Re-apply any existing overrides
+	window.applyLayoutToPreviews();
 
-		// Redraw crops
-		if(window.drawSheetCropMarks) window.drawSheetCropMarks();
-	};
+	// Redraw crops
+	if(window.drawSheetCropMarks) window.drawSheetCropMarks();
+
+	if (window.impositionfix && window.impositionfix._layouts) {
+		window._customLayouts = window.impositionfix._layouts;
+	}
+};
 
 	// Calculate scale and rotation settings for fitting content
 	window.calculatePageFit = function(w, h, availW, availH, rotation, skewX, skewY, fitMode){
@@ -440,8 +453,13 @@
 		const sheetWidthPx = pageEl.clientWidth;
 		const sheetHeightPx = pageEl.clientHeight;
 
-		const cols = Math.floor(sheetWidthPx / itemWidthPx);
-		const rows = Math.floor(sheetHeightPx / itemHeightPx);
+		const trimW = window.__trimW || itemWidthPx;
+		const trimH = window.__trimH || itemHeightPx;
+		const expW = (window.__expandL || 0) + (window.__expandR || 0);
+		const expH = (window.__expandT || 0) + (window.__expandB || 0);
+
+		const cols = Math.floor((sheetWidthPx - expW) / trimW);
+		const rows = Math.floor((sheetHeightPx - expH) / trimH);
 
 		return {
 			rows: rows > 0 ? rows : 1,
@@ -455,7 +473,7 @@
 		const hIn = document.getElementById('slotHeightInput');
 		const scaleIn = document.getElementById('slotScalePercentInput');
 		const propCheck = document.getElementById('slotProportionalCheckbox');
-		const linkScale = document.getElementById('linkSlotScaleCheckbox')?.checked;
+		const linkScale = document.getElementById('linkSlotScaleCheckbox')?.classList.contains('active');
 		const resizeAll = document.getElementById('resizeAllFramesCheckbox')?.checked;
 
 		if(wIn && hIn){
@@ -469,30 +487,26 @@
 				document.querySelectorAll('.preview.selected-frame').forEach(el => el.classList.remove('selected-frame'));
 			}
 
-			const fileW = window.__fileWidthMm;
-			const fileH = window.__fileHeightMm;
-			const isProp = propCheck && propCheck.checked && fileW && fileH;
+			const currentW = parseFloat(wIn.value) || 0;
+			const currentH = parseFloat(hIn.value) || 0;
+			const fileW = window.__fileWidthMm || currentW;
+			const fileH = window.__fileHeightMm || currentH;
+			const isProp = propCheck && propCheck.checked && fileW > 0 && fileH > 0;
 
-			if(source === 'scale' && scaleIn && fileW && fileH){
+			if(source === 'scale' && scaleIn && fileW > 0 && fileH > 0){
 				const pct = parseFloat(scaleIn.value) || 100;
 				const factor = pct / 100;
 				wIn.value = (fileW * factor).toFixed(2);
 				hIn.value = (fileH * factor).toFixed(2);
-			} else if(isProp){
-				if(source === 'w'){
-					const w = parseFloat(wIn.value) || 0;
-					if(w > 0){
-						const factor = w / fileW;
-						hIn.value = (fileH * factor).toFixed(2);
-						if(scaleIn) scaleIn.value = Math.round(factor * 100);
-					}
-				} else if(source === 'h'){
-					const h = parseFloat(hIn.value) || 0;
-					if(h > 0){
-						const factor = h / fileH;
-						wIn.value = (fileW * factor).toFixed(2);
-						if(scaleIn) scaleIn.value = Math.round(factor * 100);
-					}
+			} else if(isProp && fileW > 0 && fileH > 0){
+				if(source === 'w' && currentW > 0){
+					const factor = currentW / fileW;
+					hIn.value = (fileH * factor).toFixed(2);
+					if(scaleIn) scaleIn.value = Math.round(factor * 100);
+				} else if(source === 'h' && currentH > 0){
+					const factor = currentH / fileH;
+					wIn.value = (fileW * factor).toFixed(2);
+					if(scaleIn) scaleIn.value = Math.round(factor * 100);
 				}
 			}
 
@@ -523,53 +537,179 @@
 			const b = (parseFloat(expB?.value)||0) * pxPerMm;
 
 			if (linkScale) {
-				window.__fitToPage = true;
-				if (!window.__selectedSlots || window.__selectedSlots.length === 0) {
-					window.__currentScaleX = 1;
-					window.__currentScaleY = 1;
+				// "Scale Content With Frame" is ON: do NOT set window.__fitToPage = true
+				// (that would trigger auto-fit to page). Instead, compute and store the
+				// proportional scale based on the current frame size vs original file size.
+				if (window.__fileWidthMm && window.__fileHeightMm) {
+					const origW = window.__fileWidthMm * pxPerMm;
+					const origH = window.__fileHeightMm * pxPerMm;
+					let slotW = window.__slotW || 0;
+					let slotH = window.__slotH || 0;
+					if (!resizeAll && window.__selectedSlots && window.__selectedSlots.length > 0) {
+						const i = window.__selectedSlots[0];
+						const slotT = window.__slotTransforms && window.__slotTransforms[i];
+						const layout = (slotT && slotT.layout) || {};
+						if (layout.width !== undefined) slotW = layout.width;
+						if (layout.height !== undefined) slotH = layout.height;
+					}
+					const newScale = Math.min(slotW / Math.max(origW, 1), slotH / Math.max(origH, 1));
+					if (!window.__selectedSlots || window.__selectedSlots.length === 0) {
+						window.__currentScaleX = newScale;
+						window.__currentScaleY = newScale;
+					}
 				}
 			} else {
 				window.__fitToPage = false;
+				window.__preferUpscaleNotRotate = false;
+				window.__fillImage = false;
+				window.__stretchImage = false;
 			}
 
-			if(!resizeAll && window.__selectedSlots && window.__selectedSlots.length > 0){
-				// Selection exists: Apply inputs as overrides to selected slots.
-				window.__selectedSlots.forEach(i => {
-					if(!window.__slotTransforms[i]) window.__slotTransforms[i] = {};
-					// Use the input trim size + input expansion for the override.
-					window.__slotTransforms[i].layout = {
-						width: inputTrimW + l + r,
-						height: inputTrimH + t + b,
-						expandL: l, expandR: r, expandT: t, expandB: b
-					};
-					if (linkScale) {
-						window.__slotTransforms[i].fitToPage = true;
-						window.__slotTransforms[i].scaleX = 1;
-						window.__slotTransforms[i].scaleY = 1;
-					} else {
-						window.__slotTransforms[i].fitToPage = false;
-					}
-				});
+		if(!resizeAll && window.__selectedSlots && window.__selectedSlots.length > 0){
+			// Selection exists: Apply inputs as overrides to selected slots.
+			window.__selectedSlots.forEach(i => {
+				const tObj = window.__slotTransforms[i] || { fitToPage: true };
+				const oldLayout = tObj.layout || {};
+				
+				// Only update the dimension that was actually changed if proportionality is off.
+				const newLayout = {
+					width: (source === 'w' || source === 'scale' || isProp) ? (inputTrimW + l + r) : (oldLayout.width ?? (window.__slotW || (inputTrimW + l + r))),
+					height: (source === 'h' || source === 'scale' || isProp) ? (inputTrimH + t + b) : (oldLayout.height ?? (window.__slotH || (inputTrimH + t + b))),
+					expandL: l,
+					expandR: r,
+					expandT: t,
+					expandB: b
+				};
+				
+				window.__slotTransforms[i] = { ...tObj, layout: newLayout };
+				
+		if (linkScale) {
+				// "Scale Content With Frame" is ON: compute proportional scale per slot
+				window.__slotTransforms[i].fitToPage = false;
+				const newLayout = window.__slotTransforms[i].layout;
+				if (newLayout && window.__fileWidthMm && window.__fileHeightMm) {
+					const origW = window.__fileWidthMm * pxPerMm;
+					const origH = window.__fileHeightMm * pxPerMm;
+					const newScale = Math.min(newLayout.width / Math.max(origW, 1), newLayout.height / Math.max(origH, 1));
+					window.__slotTransforms[i].scaleX = newScale;
+					window.__slotTransforms[i].scaleY = newScale;
+				}
+				delete window.__slotTransforms[i].fitMode;
+				delete window.__slotTransforms[i].proportionalScale;
 			} else {
-				// No selection: Apply inputs globally.
-				window.__trimW = inputTrimW;
-				window.__trimH = inputTrimH;
-				window.__expandL = l;
-				window.__expandR = r;
-				window.__expandT = t;
-				window.__expandB = b;
-				window.__slotW = window.__trimW + window.__expandL + window.__expandR;
-				window.__slotH = window.__trimH + window.__expandT + window.__expandB;
+				window.__slotTransforms[i].fitToPage = false;
+				delete window.__slotTransforms[i].fitMode;
+				delete window.__slotTransforms[i].proportionalScale;
+			}
+			});
+			
+			if (linkScale) {
+				// "Scale Content With Frame" is ON: do NOT set window.__fitToPage = true.
+				// Compute and store proportional scale based on current frame size.
+				if (window.__fileWidthMm && window.__fileHeightMm) {
+					const origW = window.__fileWidthMm * pxPerMm;
+					const origH = window.__fileHeightMm * pxPerMm;
+					const newScale = Math.min(window.__slotW / Math.max(origW, 1), window.__slotH / Math.max(origH, 1));
+					window.__currentScaleX = newScale;
+					window.__currentScaleY = newScale;
+				}
+			} else {
+				window.__fitToPage = false;
+				window.__preferUpscaleNotRotate = false;
+				window.__fillImage = false;
+				window.__stretchImage = false;
+			}
+		} else {
+			// No selection: Apply inputs globally.
+			window.__trimW = inputTrimW;
+			window.__trimH = inputTrimH;
+			window.__expandL = l;
+			window.__expandR = r;
+			window.__expandT = t;
+			window.__expandB = b;
+			
+			const oldW = window.__slotW;
+			const oldH = window.__slotH;
+			window.__slotW = window.__trimW + window.__expandL + window.__expandR;
+			window.__slotH = window.__trimH + window.__expandT + window.__expandB;
+			
+		if (linkScale) {
+			// "Scale Content With Frame" is ON: compute proportional scale from new frame size
+			if (window.__fileWidthMm && window.__fileHeightMm) {
+				const origW = window.__fileWidthMm * pxPerMm;
+				const origH = window.__fileHeightMm * pxPerMm;
+				const newScale = Math.min(window.__slotW / Math.max(origW, 1), window.__slotH / Math.max(origH, 1));
+				window.__currentScaleX = newScale;
+				window.__currentScaleY = newScale;
+			}
+		} else {
+			window.__fitToPage = false;
+			window.__preferUpscaleNotRotate = false;
+			window.__fillImage = false;
+			window.__stretchImage = false;
+			window.__proportionalScale = null;
+		}
 
-				if(resizeAll && window.__slotTransforms){
+				if(window.__slotTransforms){
 					Object.keys(window.__slotTransforms).forEach(k => {
-						if(window.__slotTransforms[k].layout) delete window.__slotTransforms[k].layout;
+						if(resizeAll && window.__slotTransforms[k].layout) delete window.__slotTransforms[k].layout;
+						if(!linkScale) { delete window.__slotTransforms[k].fitToPage; delete window.__slotTransforms[k].fitMode; }
 					});
 				}
 			}
 			// Apply all changes to the DOM.
-			window.applyLayoutToPreviews();
-			if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
+		window.applyLayoutToPreviews();
+
+			// Update content Width/Height inputs when Scale Content With Frame is active
+			if (linkScale && window.__fileWidthMm && window.__fileHeightMm) {
+				const origW = window.__fileWidthMm * pxPerMm;
+				const origH = window.__fileHeightMm * pxPerMm;
+				let slotW = window.__slotW || 0;
+				let slotH = window.__slotH || 0;
+
+				if (!resizeAll && window.__selectedSlots && window.__selectedSlots.length > 0) {
+					const i = window.__selectedSlots[0];
+					const els = document.getElementsByClassName('preview');
+					const el = els[i];
+					const pageNum = el ? parseInt(el.dataset.pageNum) : null;
+					const slotT = window.__slotTransforms && window.__slotTransforms[i];
+					const pageT = (pageNum && window.__pageTransforms && window.__pageTransforms[pageNum]) || {};
+					const layout = (slotT && slotT.layout) || (pageT && pageT.layout) || {};
+					if (layout.width !== undefined) slotW = layout.width;
+					if (layout.height !== undefined) slotH = layout.height;
+				}
+
+				const scale = Math.min(slotW / Math.max(origW, 1), slotH / Math.max(origH, 1));
+				const wIn = document.getElementById('widthInput');
+				const hIn = document.getElementById('heightInput');
+				if (wIn && document.activeElement !== wIn) wIn.value = (window.__fileWidthMm * scale).toFixed(2);
+				if (hIn && document.activeElement !== hIn) hIn.value = (window.__fileHeightMm * scale).toFixed(2);
+			}
+
+		if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
+
+			// If "Match Sheet to Grid" is active, update the sheet size now
+			const matchPageSizeBtn = document.getElementById('matchPageSizeBtn');
+			if(matchPageSizeBtn && matchPageSizeBtn.classList.contains('active')){
+				const rInput = document.getElementById('rowsInput');
+				const cInput = document.getElementById('colsInput');
+				const rNum = parseInt(rInput?.value || 1);
+				const cNum = parseInt(cInput?.value || 1);
+				const sWIn = document.getElementById('sheetWidthInput');
+				const sHIn = document.getElementById('sheetHeightInput');
+				if (sWIn && sHIn) {
+					const trimW = window.__trimW || 0;
+					const trimH = window.__trimH || 0;
+					const l = window.__expandL || 0;
+					const r_exp = window.__expandR || 0;
+					const t = window.__expandT || 0;
+					const b = window.__expandB || 0;
+					sWIn.value = (((cNum * trimW) + l + r_exp) / pxPerMm).toFixed(2);
+					sHIn.value = (((rNum * trimH) + t + b) / pxPerMm).toFixed(2);
+					window.updateSheetSize();
+					return; // updateSheetSize handles rendering
+				}
+			}
 
 			// Recalculate grid fit based on trim size (ignoring expansion)
 			const autoGridCheck = document.getElementById('autoGridCheck');
@@ -617,14 +757,13 @@
 		if(colBtn) colBtn.classList.toggle('active', window.__selectionMode && window.__selectionType === 'col');
 		if(slotBtn) slotBtn.classList.toggle('active', window.__selectionMode && window.__selectionType === 'single');
 
-		if(!window.__selectionMode){
-			// Clear selection
-			window.__selectedPages = [];
+		if(!window.__selectionMode) {
 			window.__selectedSlots = [];
+			window.__selectedPages = [];
 			document.querySelectorAll('.preview.selected-frame').forEach(el => el.classList.remove('selected-frame'));
-			if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
-			if(window.syncSelectionToUI) window.syncSelectionToUI();
 		}
+		if(window.updateStatusSlotInfo) window.updateStatusSlotInfo();
+		if(window.syncSelectionToUI) window.syncSelectionToUI();
 	};
 
 	// Handle click on workspace/preview
@@ -960,18 +1099,16 @@
 		const leftOffset = Math.max(0, (availW - visualW) / 2);
 
 		sheets.forEach((s, i) => {
-			// Use translate for centering to avoid margin:auto issues with large unscaled widths
-			s.style.transform = `translate(${leftOffset}px, 0px) scale(${scale})`;
+			// Keep CSS margin: 0 auto for horizontal centering, use transform only for scale
+			s.style.transform = `translate(0px, 0px) scale(${scale})`;
 			s.style.transformOrigin = 'top left';
-			s.style.margin = '0'; // Override CSS margin: 0 auto
+			s.style.margin = `${topOffset}px auto 0 auto`;
 
 			const heightDiff = sheetH * (1 - scale);
 			s.style.marginBottom = `-${heightDiff}px`;
 
 			const widthDiff = sheetW * (1 - scale);
 			s.style.marginRight = `-${widthDiff}px`;
-			
-			if(i === 0) s.style.marginTop = `${topOffset}px`;
 		});
 	};
 
