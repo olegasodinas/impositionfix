@@ -42,6 +42,7 @@ Or download an use it locally on your disk.
   the opposite side.
 - Cut & Stack
 - Date Merge
+- Plugins
 - Optimize PDF via Ghostscript (folded "Optimize PDF (Ghostscript)" section in
   the left toolbox; saves the result as `<original>_optimized.pdf`)
 
