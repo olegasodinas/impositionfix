@@ -56,6 +56,9 @@ npm start        # serves http://localhost:3000  (requires Ghostscript `gs`)
 Then open http://localhost:3000 in your browser. Ghostscript must be installed
 and available on PATH.
 
+If you don't have npm you can download it here: 
+https://nodejs.org
+
 ## Commands
 
 - repeat: Repeat pages to fill sheets
