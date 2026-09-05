@@ -73,5 +73,6 @@ If you don't have npm you can download it here: https://nodejs.org
 
 ![Alt text](pictures/small_screen.png)
 ![Alt text](pictures/impositionfix.png)
+![Alt text](pictures/menu.png)
 
 [![Alt text](assets/kofi_logo.png)](https://ko-fi.com/olegasodinas)
