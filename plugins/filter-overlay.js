@@ -27,10 +27,9 @@
         { label: 'Luminosity',   css: 'luminosity',  pdf: 'Luminosity' },
         // Custom mode: weighted by a midtone luminance mask so pure white and
         // pure black are left completely untouched. Preview uses an SVG
-        // backdrop-filter (see ensureMidtoneFilter); PDF export uses Multiply
-        // so the effect is visible on all colors (pure CMYK 100% values, etc.)
-        // — the on-screen SVG mask is stricter, but pdf-lib cannot express it.
-        { label: 'Midtones Only', css: 'midtone',    pdf: 'Multiply', midtone: true }
+        // backdrop-filter (see ensureMidtoneFilter); PDF export approximates
+        // with SoftLight, which also preserves pure black/white exactly.
+        { label: 'Midtones Only', css: 'midtone',    pdf: 'SoftLight', midtone: true }
     ];
 
     const MIDTONE_FILTER_ID = 'plugin-midtone-filter';
@@ -117,10 +116,6 @@
         // ---- Preview: full-sheet DOM layer with CSS mix-blend-mode ----
         drawPreview: function (container, pageNum, slotIndex) {
             if (this.visible === false) return;
-            // Skip if color is effectively white (no ink) — a white filter
-            // on a white background is invisible and adds render cost.
-            const c = this.cmyk || [0, 0, 0, 0];
-            if (c[0] === 0 && c[1] === 0 && c[2] === 0 && c[3] === 0) return;
             const sheet = container.closest ? container.closest('.page') : null;
             if (!sheet) return;
             // NOTE: query within the sheet — there is one layer per .page
@@ -132,58 +127,54 @@
                 layer.style.inset = '0';
                 layer.style.pointerEvents = 'none';
                 layer.style.zIndex = '40';
-                layer.style.isolation = 'isolate';
                 sheet.appendChild(layer);
             }
             applyLayerStyle.call(this, layer);
         },
 
-        // ---- PDF export: full-page rectangle with ExtGState blend mode ----
-        drawPdf: function (newPage, boxX, boxY, boxW, boxH, pdfLib, pageNum, offset, slotIndex) {
+        // ---- PDF export: full-sheet rectangle with ExtGState blend mode ----
+        // Drawn from the SHEET-level pass (drawPdfSheet runs after every slot of
+        // the sheet has already been placed in the content stream). This is the
+        // correct home for a full-sheet filter.
+        //
+        // Previously this lived in drawPdf, which is invoked once per SLOT via
+        // drawPdfOverlays. The __filterOverlayDrawn guard forced it to draw on
+        // the FIRST slot, putting the full-page rectangle into the stream
+        // between slot 1 and slot 2. Slots 2..N were then painted ON TOP of the
+        // filter, so on every sheet only the first page's content was blended —
+        // while the white sheet/paper background (already in the stream around
+        // the slots) was tinted. A full-sheet filter must cover every slot, so
+        // it must be emitted after all slot content.
+        drawPdfSheet: function (newPage, pxToPt, pdfLib, sheetIndex, sheetWidthPt) {
             if (this.visible === false) return;
-
             try {
                 let size = null;
                 try { size = newPage.getSize(); } catch (e) { /* ignore */ }
-                const W = size ? size.width : Math.max(boxX + boxW, boxX + 1);
-                const H = size ? size.height : Math.max(boxY + boxH, boxH + 1);
-                // Skip drawing if color is effectively white (no ink) — applying
-                // a filter on top of white with a blend mode is a no-op anyway.
+                const W = size ? size.width : (sheetWidthPt || newPage.getWidth());
+                const H = size ? size.height : newPage.getHeight();
                 const c = this.cmyk || [0, 0, 0, 0];
-                if (c[0] === 0 && c[1] === 0 && c[2] === 0 && c[3] === 0) return;
-                // Clamp CMYK values to 0-1 range for pdf-lib
-                const cClamped = c.map(v => Math.max(0, Math.min(1, v || 0)));
                 const opacity = Math.max(0, Math.min(1, this.opacity !== undefined ? this.opacity : 0.5));
                 const modeDef = MODES.find(m => m.pdf === this.mode) || MODES[1];
-                // "Midtones Only" exports as Multiply so the effect is visible
-                // on all colors (including pure 100% CMYK). The on-screen SVG
-                // mask is stricter (hard 20-80% window), which a PDF ExtGState
-                // cannot express.
+                // "Midtones Only" exports as SoftLight: mathematically keeps pure
+                // black (Cb=0) and pure white (Cb=1) unchanged and weights the
+                // effect toward midtones. The on-screen SVG mask is stricter
+                // (hard 20-80% window), which a PDF ExtGState cannot express.
                 const opts = {
                     x: 0,
-                    // The wrapper proxy converts a top-relative y into
-                    // bottom-left page coords (opts.y = boxY + boxH - y), so
-                    // passing boxY + boxH lands the rect at the true page
-                    // origin (0) and covers the whole sheet.
-                    y: boxY + boxH,
+                    y: 0, // PDF coords, bottom-left origin (no wrapping proxy here)
                     width: W,
                     height: H,
-                    color: pdfLib.cmyk(cClamped[0], cClamped[1], cClamped[2], cClamped[3]),
+                    color: pdfLib.cmyk(c[0] || 0, c[1] || 0, c[2] || 0, c[3] || 0),
                     opacity: opacity
                 };
                 try {
-                    // Draw the filter with blend mode directly on the existing content.
-                    // The filter will blend with whatever is already on the page (page
-                    // content). This is the PDF equivalent of CSS isolation: the blend
-                    // applies to existing content but not to the page's transparent
-                    // background.
                     newPage.drawRectangle(Object.assign({}, opts, { blendMode: modeDef.pdf }));
                 } catch (eNoBlend) {
                     // Older pdf-lib without blendMode support — still apply color+opacity.
                     newPage.drawRectangle(opts);
                 }
             } catch (e) {
-                console.error('[filter-overlay] drawPdf failed:', e);
+                console.error('[filter-overlay] drawPdfSheet failed:', e);
             }
         }
     };
@@ -236,7 +227,6 @@
                 layer.style.inset = '0';
                 layer.style.pointerEvents = 'none';
                 layer.style.zIndex = '40';
-                layer.style.isolation = 'isolate';
                 sheet.appendChild(layer);
             }
             applyLayerStyle.call(o, layer);
@@ -342,13 +332,11 @@
             } catch (e) { /* ignore */ }
 
             // ---- Settings tab (right toolbox) ----
-            if (api && api.ui && api.ui.tabs) {
-                api.ui.tabs.push({
-                    id: 'filter-overlay',
-                    label: 'Filter',
-                    contentFn: function (panel) { buildFilterPanel(panel); }
-                });
-            }
+            api.ui.tabs.push({
+                id: 'filter-overlay',
+                label: 'Filter',
+                contentFn: function (panel) { buildFilterPanel(panel); }
+            });
 
             // Release the drag guard and resync every panel once any slider
             // drag ends (registered once globally). 'blur' clears a flag that
@@ -379,10 +367,6 @@
                     return;
                 }
                 if (tabBar.querySelector('[data-tab="filter-overlay"]')) return; // already there
-                if (!api || !api.ui || !api.ui.tabs || api.ui.tabs.length === 0) {
-                    if (++tries < 40) setTimeout(tryInject, 250);
-                    return;
-                }
                 const tab = api.ui.tabs[api.ui.tabs.length - 1];
                 const tabBtn = document.createElement('button');
                 tabBtn.className = 'toolbox-btn';
