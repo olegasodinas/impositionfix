@@ -1369,14 +1369,24 @@
 						}
 					}
 
-					// Draw Overlays (e.g. purple square) - per slot (regular UI overlays)
+					// Draw Overlays (e.g. purple square)
 					if(window.drawPdfOverlays) await window.drawPdfOverlays(newPage, boxX, boxY, boxW, boxH, window.PDFLib, pageNum, {x: l * pxToPt, y: top * pxToPt, r: r_exp * pxToPt, b: bot * pxToPt}, currentPreviewIndex, allPages);
 				}
 
-				// Draw Plugin Overlays (e.g. filter overlay) - once per page after all slots
-				if(window.drawPdfPageOverlays) await window.drawPdfPageOverlays(newPage, window.PDFLib);
+				// Draw plugin SHEET-level overlays (e.g. Filter Overlay). These must
+				// run AFTER every slot's content is already in the stream, otherwise
+				// a full-sheet blend would only ever cover the first slot (the
+				// previous per-slot drawPdf behaviour left slots 2..N untouched).
+				if(window.__overlays){
+					for(const ov of window.__overlays){
+						if(ov.visible === false) continue;
+						if(!ov._pluginName || typeof ov.drawPdfSheet !== 'function') continue;
+						try { await ov.drawPdfSheet(newPage, pxToPt, window.PDFLib, i, sheetW); }
+						catch(errOverlay){ console.error('Plugin sheet drawPdfSheet error:', ov.id || ov.name, errOverlay); }
+					}
+				}
 
-			// Draw Crop Marks
+				// Draw Crop Marks
 				// We can reuse the SVG lines from the DOM if they exist
 				const svgLines = sheet.querySelectorAll('.sheet-crop-marks line');
 				svgLines.forEach((line, idx) => {
